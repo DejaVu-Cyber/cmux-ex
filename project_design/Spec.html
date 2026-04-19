@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>cmux — Implementation Spec</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg0: #0e0f12; --bg1: #14161b; --bg2: #1a1d23; --bg3: #22262e;
+    --line1: rgba(255,255,255,0.07); --line2: rgba(255,255,255,0.11);
+    --fg0: #eceef2; --fg1: #c7cad2; --fg2: #8d92a0; --fg3: #60646f; --fg4: #40444d;
+    --accent: #7aa2f7; --accentSoft: rgba(122,162,247,0.12);
+    --green:  #8bd17c; --yellow: #e0c080; --red: #e07a7a; --orange: #e8a870; --purple: #c2a0e8; --cyan: #7fd3d3;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg0); color: var(--fg1); }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 14px; line-height: 1.55;
+  }
+  .wrap {
+    max-width: 880px; margin: 0 auto; padding: 48px 32px 120px;
+  }
+  .hero { margin-bottom: 48px; padding-bottom: 24px; border-bottom: 1px solid var(--line1); }
+  .eyebrow { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: 0.8px; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+  h1 { margin: 4px 0 4px; font-size: 34px; font-weight: 600; color: var(--fg0); letter-spacing: -0.2px; }
+  h2 {
+    margin: 56px 0 12px; font-size: 22px; font-weight: 600; color: var(--fg0);
+    padding-bottom: 8px; border-bottom: 1px solid var(--line1);
+  }
+  h3 { margin: 28px 0 8px; font-size: 15px; font-weight: 600; color: var(--fg0); letter-spacing: 0.2px; }
+  p { color: var(--fg1); }
+  .lede { font-size: 15px; color: var(--fg2); max-width: 720px; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+  code { color: var(--accent); background: var(--accentSoft); padding: 1px 5px; border-radius: 3px; }
+  pre {
+    background: var(--bg1); border: 1px solid var(--line1); border-radius: 6px;
+    padding: 14px 16px; overflow: auto; font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+    color: var(--fg1); line-height: 1.55;
+  }
+  ul, ol { padding-left: 20px; }
+  li { margin: 4px 0; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    margin: 10px 0 20px; background: var(--bg1);
+    border: 1px solid var(--line1); border-radius: 6px; overflow: hidden;
+  }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line1); vertical-align: top; }
+  th { font-size: 11px; font-weight: 600; color: var(--fg3); text-transform: uppercase; letter-spacing: 0.5px; background: var(--bg0); }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg2); }
+
+  .swatch-row { display: grid; grid-template-columns: 40px 1fr 1fr; gap: 12px; align-items: center; }
+  .sw { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--line2); }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accentSoft);
+    padding: 12px 16px; margin: 16px 0; border-radius: 0 6px 6px 0;
+    font-size: 13px; color: var(--fg1);
+  }
+  .callout strong { color: var(--fg0); }
+
+  .key {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    padding: 2px 6px; border: 1px solid var(--line2); border-radius: 3px;
+    color: var(--fg1); background: var(--bg1);
+  }
+
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .tag.yellow { background: rgba(224,192,128,0.14); color: var(--yellow); }
+  .tag.red    { background: rgba(224,122,122,0.14); color: var(--red); }
+  .tag.blue   { background: var(--accentSoft);      color: var(--accent); }
+  .tag.orange { background: rgba(232,168,112,0.14); color: var(--orange); }
+  .tag.green  { background: rgba(139,209,124,0.14); color: var(--green); }
+  .tag.gray   { background: rgba(255,255,255,0.05); color: var(--fg3); }
+
+  .toc {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px;
+    padding: 16px 20px; background: var(--bg1); border: 1px solid var(--line1); border-radius: 6px;
+    margin-bottom: 48px;
+    font-size: 13px;
+  }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line1); font-size: 12px; color: var(--fg3); }
+  .footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <div class="eyebrow">cmux · implementation spec · v1.0</div>
+  <h1>Design Spec</h1>
+  <p class="lede">
+    This document accompanies <a href="Final Design.html" style="color: var(--accent)">Final Design.html</a>. It captures the decisions, tokens, and interaction rules the mock encodes. The target platform is a native macOS app (SwiftUI / AppKit); the HTML is a visual reference, not a runtime artifact.
+  </p>
+</div>
+
+<div class="toc">
+  <div><a href="#mental-model">1. Mental model</a></div>
+  <div><a href="#window-anatomy">2. Window anatomy</a></div>
+  <div><a href="#tokens">3. Design tokens</a></div>
+  <div><a href="#typography">4. Typography</a></div>
+  <div><a href="#components">5. Components</a></div>
+  <div><a href="#notifications">6. Notifications</a></div>
+  <div><a href="#shortcuts">7. Keyboard shortcuts</a></div>
+  <div><a href="#state">8. State &amp; persistence</a></div>
+  <div><a href="#edge-cases">9. Edge cases</a></div>
+  <div><a href="#open-questions">10. Open questions</a></div>
+</div>
+
+<!-- ═══════════════════════ 1. Mental model ═══════════════════════ -->
+<h2 id="mental-model">1. Mental model</h2>
+
+<p>cmux is built on three nested concepts:</p>
+<ol>
+  <li><strong>Project</strong> — a top-level unit; corresponds 1:1 with a repo + optional service config. Each project has a user-assigned name and color. <em>Represented as a browser-style tab at the top of the window.</em></li>
+  <li><strong>Workspace</strong> — a working context within a project: typically a git branch/worktree, a task, or an experiment. A project has 1..N workspaces. <em>Listed in the sidebar of the active project.</em></li>
+  <li><strong>Pane</strong> — a running agent or shell inside a workspace. Multi-pane splits live in the main content area. Each pane hosts a <strong>tab strip</strong> of its own (multiple agents/shells can share a pane slot). <em>Analogous to iTerm/tmux panes but with tabs.</em></li>
+</ol>
+
+<div class="callout">
+  <strong>The single most important rule:</strong> the tab bar represents projects, the sidebar represents workspaces within the active project, and panes represent agents/shells within the active workspace. Each layer does exactly one job.
+</div>
+
+<h3>Why tab-per-project (not one-sidebar-with-many-projects)</h3>
+<ul>
+  <li>The <em>common case</em> — one workspace per project — produces a clean single-row sidebar with no grouping scaffolding.</li>
+  <li>Projects already feel like "separate worlds" (separate repos, separate services, separate terminal environments). Tabs reinforce that.</li>
+  <li>Drag-out-to-new-window works like browsers: gives power users window-per-project without forcing it.</li>
+  <li>Multi-level badges roll up honestly: pane → workspace row → project tab.</li>
+</ul>
+
+<!-- ═══════════════════════ 2. Window anatomy ═══════════════════════ -->
+<h2 id="window-anatomy">2. Window anatomy</h2>
+
+<pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ ● ● ●  [darkmatter ●][ melty ][ conductor ][ chorus ] +                 ⌘K │ ← Tab strip (36px)
+├──────────────────┬──────────────────────────────────────────────────────────┤
+│ ⌥ repo           │ archive-in-repo-details · kampala-v3  +611 -1  ⌘1–9 ⌃⇥ │ ← Workspace toolbar (34px)
+│                  ├──────────────────────────────────────────────────────────┤
+│ WORKSPACES · 3 + │ ┌──────────────────────────────────────────────────────┐ │
+│ ● archive-in…  ⌁2│ │ [claude·zeitgeist][claude·refactor ⦿][shell·watch] + │ │ ← Tabbed pane
+│   kampala-v3     │ │                                                      │ │
+│   ⦿ claude refactor│ │   (pane body)                                      │ │
+│   ⦿ shell build  │ │                                                      │ │
+│ ● venezuela    !1│ ├──────────────────────────────────────────────────────┤ │
+│ ○ system-tray    │ │ [scrapers.json][pipeline.py] + │ [claude/exit][build.│ │ ← Split pane
+│                  │ │                                │  log ⦿][redis-cli]  │ │
+│ SERVICES · 3  +  │ │                                │                     │ │
+│ □ postgres    ●  │ │                                │                     │ │
+│ ▣ api-server  ●  │ │                                │                     │ │
+│ □ scraper     !  │ │                                │                     │ │
+└──────────────────┴──────────────────────────────────────────────────────────┘
+   260px sidebar                      flexible main content
+</pre>
+
+<table>
+  <thead><tr><th>Region</th><th>Size</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Title bar + tab strip</td><td class="mono">36 px</td><td>Traffic lights left; tabs fill center; <code>⌘K</code> palette on right.</td></tr>
+    <tr><td>Project tab</td><td class="mono">min 140, max 200</td><td>8px project-color square · name · optional yellow/red pip · × close.</td></tr>
+    <tr><td>Sidebar</td><td class="mono">260 px</td><td>User-resizable (min 200, max 400). Repo row, workspaces list, services footer.</td></tr>
+    <tr><td>Workspace toolbar</td><td class="mono">34 px</td><td>Title, branch, diff stats, hotkey hints.</td></tr>
+    <tr><td>Pane tab</td><td class="mono">28 px tall, min 100 max 200</td><td>6px status dot · label · × close.</td></tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════ 3. Tokens ═══════════════════════ -->
+<h2 id="tokens">3. Design tokens</h2>
+
+<p>All surfaces and text step up from <em>deepest</em> to <em>raised</em> using a 4-step scale. Light mode uses a cool paper palette, not pure white.</p>
+
+<h3>Surface scale</h3>
+<table>
+  <thead><tr><th>Token</th><th>Role</th><th>Dark</th><th>Light</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">bg0</td><td>App chrome, gutters, deepest</td><td class="mono">#0e0f12</td><td class="mono">#eceae4</td></tr>
+    <tr><td class="mono">bg1</td><td>Sidebar, inactive panes</td><td class="mono">#14161b</td><td class="mono">#f4f2ed</td></tr>
+    <tr><td class="mono">bg2</td><td>Active pane, cards</td><td class="mono">#1a1d23</td><td class="mono">#fbfaf6</td></tr>
+    <tr><td class="mono">bg3</td><td>Hovered items</td><td class="mono">#22262e</td><td class="mono">#ecebe4</td></tr>
+    <tr><td class="mono">bg4</td><td>Selected items</td><td class="mono">#2a2f38</td><td class="mono">#e3e1d8</td></tr>
+  </tbody>
+</table>
+
+<h3>Borders & lines</h3>
+<table>
+  <thead><tr><th>Token</th><th>Role</th><th>Dark</th><th>Light</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">line0</td><td>Hairlines</td><td class="mono">rgba(255,255,255,0.04)</td><td class="mono">rgba(20,22,28,0.05)</td></tr>
+    <tr><td class="mono">line1</td><td>Dividers</td><td class="mono">rgba(255,255,255,0.07)</td><td class="mono">rgba(20,22,28,0.08)</td></tr>
+    <tr><td class="mono">line2</td><td>Card / pane borders</td><td class="mono">rgba(255,255,255,0.11)</td><td class="mono">rgba(20,22,28,0.12)</td></tr>
+    <tr><td class="mono">line3</td><td>Emphasized</td><td class="mono">rgba(255,255,255,0.18)</td><td class="mono">rgba(20,22,28,0.20)</td></tr>
+  </tbody>
+</table>
+
+<h3>Text</h3>
+<table>
+  <thead><tr><th>Token</th><th>Role</th><th>Dark</th><th>Light</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">fg0</td><td>Primary (titles)</td><td class="mono">#eceef2</td><td class="mono">#1a1c22</td></tr>
+    <tr><td class="mono">fg1</td><td>Body</td><td class="mono">#c7cad2</td><td class="mono">#32353e</td></tr>
+    <tr><td class="mono">fg2</td><td>Secondary</td><td class="mono">#8d92a0</td><td class="mono">#656975</td></tr>
+    <tr><td class="mono">fg3</td><td>Tertiary (meta)</td><td class="mono">#60646f</td><td class="mono">#8a8e99</td></tr>
+    <tr><td class="mono">fg4</td><td>Disabled / quietest</td><td class="mono">#40444d</td><td class="mono">#b0b3bc</td></tr>
+  </tbody>
+</table>
+
+<h3>Accents & signals</h3>
+<table>
+  <thead><tr><th>Token</th><th>Role</th><th>Dark</th><th>Light</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">accent</td><td>Focus / active / new output</td><td class="mono">#7aa2f7</td><td class="mono">#3860c8</td></tr>
+    <tr><td class="mono">green</td><td>Running / ok</td><td class="mono">#8bd17c</td><td class="mono">#3a8a3a</td></tr>
+    <tr><td class="mono">yellow</td><td>Needs input</td><td class="mono">#e0c080</td><td class="mono">#a87300</td></tr>
+    <tr><td class="mono">red</td><td>Error</td><td class="mono">#e07a7a</td><td class="mono">#b84545</td></tr>
+    <tr><td class="mono">orange</td><td>Bell (terminal)</td><td class="mono">#e8a870</td><td class="mono">#b05a1a</td></tr>
+    <tr><td class="mono">purple</td><td>Agent accent</td><td class="mono">#c2a0e8</td><td class="mono">#6d50a8</td></tr>
+  </tbody>
+</table>
+
+<h3>Radius & spacing</h3>
+<ul>
+  <li>Window corner radius: <code>8px</code>.</li>
+  <li>Card / pane corner radius: <code>4px</code>. Sidebar row corner radius: <code>5px</code>.</li>
+  <li>Base unit: <code>4px</code>. Common pads: 6 · 8 · 10 · 12 · 14 · 18 px.</li>
+  <li>Focus ring: 1px solid <code>accentLine</code> (35% alpha accent).</li>
+</ul>
+
+<!-- ═══════════════════════ 4. Typography ═══════════════════════ -->
+<h2 id="typography">4. Typography</h2>
+
+<table>
+  <thead><tr><th>Role</th><th>Family</th><th>Size</th><th>Weight</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>UI body</td><td>Inter / -apple-system</td><td class="mono">13</td><td>400</td><td>Workspace titles, panel text</td></tr>
+    <tr><td>UI strong</td><td>Inter</td><td class="mono">12–13</td><td>500–600</td><td>Workspace row titles, tab labels active</td></tr>
+    <tr><td>Meta</td><td>JetBrains Mono</td><td class="mono">10.5–11</td><td>400</td><td>Branches, paths, hotkey hints, status labels</td></tr>
+    <tr><td>Section header</td><td>Inter</td><td class="mono">9.5</td><td>600, uppercase, +0.6 letter-spacing</td><td>"WORKSPACES · 3"</td></tr>
+    <tr><td>Tab label</td><td>JetBrains Mono</td><td class="mono">11–12</td><td>400/500</td><td>Project + pane tabs</td></tr>
+    <tr><td>Terminal content</td><td>JetBrains Mono</td><td class="mono">12+ (user-controlled)</td><td>400</td><td>Inside panes</td></tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════ 5. Components ═══════════════════════ -->
+<h2 id="components">5. Components</h2>
+
+<h3>5.1 · Project tab</h3>
+<ul>
+  <li><strong>Anatomy</strong>: 8×8px rounded color square · project name · optional signal pips · × close.</li>
+  <li><strong>Active</strong>: filled with <code>bg1</code>, 2px top border in project color, 1px L/R borders in <code>line1</code>, no bottom border (merges into sidebar).</li>
+  <li><strong>Inactive</strong>: transparent background, no top border, bottom border in <code>line1</code>.</li>
+  <li><strong>Close</strong>: × in <code>fg3</code>, visible on hover (or always on active).</li>
+  <li><strong>Pips</strong>: 6px yellow dot = project has a workspace needing input; 6px red dot = a service has errored. Both shown on the right side, before the ×.</li>
+  <li><strong>Drag-out</strong>: holding and dragging a tab outside the window spawns a new window with only that tab; reversible by dragging back.</li>
+</ul>
+
+<h3>5.2 · Sidebar</h3>
+<ul>
+  <li><strong>Repo row</strong> at top: branch icon + repo slug in mono, <code>fg2</code>. 10px vertical padding. Non-interactive (just info).</li>
+  <li><strong>Workspaces header</strong>: uppercase eyebrow + count + <code>+</code>. Clicking <code>+</code> opens "new workspace" palette.</li>
+  <li><strong>Workspace row</strong> (see 5.3).</li>
+  <li><strong>Services footer</strong> (optional): uppercase eyebrow + count + <code>+</code>. One row per service: kind icon · title · status pill.</li>
+</ul>
+
+<h3>5.3 · Workspace row (aggregated)</h3>
+<ul>
+  <li><strong>Leading dot</strong> (6px) — priority-highest-wins: <code>red (error) → yellow (needs input) → blue (new output) → green (running) → gray (idle)</code>. Pulses iff any actionable signal is unseen.</li>
+  <li><strong>Title</strong> (12.5px, 500), single-line ellipsis.</li>
+  <li><strong>Aggregated pips</strong> (trailing) — one chip per signal kind with a count. E.g. <span class="tag yellow">⌁2</span> <span class="tag red">!1</span> <span class="tag orange">♪1</span>.</li>
+  <li><strong>Meta line</strong>: branch · <span class="tag" style="color:var(--purple)">◆N</span> agents · <span class="tag" style="color:var(--fg3)">›N</span> shells · age.</li>
+  <li><strong>Active</strong>: <code>accentSoft</code> background, 2px accent rail on the left edge.</li>
+  <li><strong>Active + has panes</strong>: row expands inline to show one line per pane, each with its own specific signal dot + label. This is how 2+ agents in the same workspace get disambiguated.</li>
+</ul>
+
+<h3>5.4 · Tabbed pane</h3>
+<ul>
+  <li><strong>Tab strip</strong> on <code>bg0</code> (matches app chrome). Tabs overlap the pane body's top border.</li>
+  <li><strong>Pane body</strong> is <code>bg2</code> with a 1px <code>line1</code> border, 4px radius.</li>
+  <li><strong>Tab chrome</strong>: 28px tall · 6px status dot · label (JetBrains Mono 11) · × close. Active tab has 2px top border in <code>accent</code> + merges into pane body. Inactive tabs have <code>line1</code> bottom border.</li>
+  <li><strong>+</strong> button at end of strip: opens a mini-palette ("new agent · new shell · new file").</li>
+  <li><strong>No pulsing pane body</strong>. Ever. The signal is always on the tab's leading dot.</li>
+  <li><strong>Split</strong>: panes are arranged in a splittable grid (top-row 1, bottom-row 2 is default on first split). User can drag dividers; Cmd+D horizontal split, Cmd+Shift+D vertical.</li>
+</ul>
+
+<!-- ═══════════════════════ 6. Notifications ═══════════════════════ -->
+<h2 id="notifications">6. Notifications</h2>
+
+<p>Three-tier signal language. Intensity matches stakes.</p>
+
+<table>
+  <thead>
+    <tr><th>Kind</th><th>Tier</th><th>Color</th><th>Behavior</th><th>Source</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="tag yellow">needs input</span></td>
+      <td>Actionable</td><td class="mono">yellow</td>
+      <td>Dot pulses when <em>unseen</em>. Static when <em>seen</em> (user has looked at pane but not responded). Clears when resolved.</td>
+      <td>Agent emits a "waiting for input" event.</td>
+    </tr>
+    <tr>
+      <td><span class="tag red">error</span></td>
+      <td>Actionable</td><td class="mono">red</td>
+      <td>Same as needs-input. Stronger priority — red wins over yellow in roll-ups.</td>
+      <td>Non-zero exit, crash, or agent reports failure.</td>
+    </tr>
+    <tr>
+      <td><span class="tag blue">new output</span></td>
+      <td>Informational</td><td class="mono">accent blue</td>
+      <td>Static dot (no pulse). Clears when the user focuses that pane.</td>
+      <td>Any unread content since last focus.</td>
+    </tr>
+    <tr>
+      <td><span class="tag orange">bell</span></td>
+      <td>Ambient</td><td class="mono">orange</td>
+      <td>Static dot (no pulse). Auto-clears after 5 seconds OR on pane focus, whichever first.</td>
+      <td>Terminal BEL (<code>\a</code>) from shell.</td>
+    </tr>
+    <tr>
+      <td><span class="tag green">running</span></td>
+      <td>State</td><td class="mono">green</td>
+      <td>Static dot. Not a "notification" — just a live status.</td>
+      <td>Process/agent is active.</td>
+    </tr>
+    <tr>
+      <td><span class="tag gray">idle</span></td>
+      <td>State</td><td class="mono">gray</td>
+      <td>Static dot. Quietest.</td>
+      <td>No active process.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Lifecycle</h3>
+<ol>
+  <li><strong>Emit</strong>: agent/shell produces an event. Signal attaches to the pane tab.</li>
+  <li><strong>Roll up</strong>: the workspace row's aggregated pip count increments; the project tab's roll-up pip lights up iff this is actionable.</li>
+  <li><strong>Pulse</strong>: if actionable and unseen, the pane-tab dot pulses. <strong>Pulse decays after 8 seconds</strong> regardless — attention fatigue is real.</li>
+  <li><strong>Seen</strong>: when the user focuses the pane (or even just the workspace), the pulse stops. Dot remains colored until resolved.</li>
+  <li><strong>Resolved</strong>: user responds to the agent / dismisses the error / clears the bell. Dot disappears. Roll-ups decrement.</li>
+</ol>
+
+<div class="callout">
+  <strong>No pulsing borders.</strong> The existing blue pulsing pane border is replaced entirely by tab-dot signals. A pulsing border competes with focus state and overwhelms the pane content.
+</div>
+
+<h3>Roll-up priority</h3>
+<p>When a single dot must represent multiple signals (workspace row leading dot, project tab pip), higher priority wins:</p>
+<pre>error (red) > needs-input (yellow) > new-output (blue) > running (green) > bell (orange) > idle (gray)</pre>
+<p>Aggregated pip chips (trailing, with counts) are shown <em>in addition</em> to the leading dot — so you see both the top-priority state and the breakdown.</p>
+
+<!-- ═══════════════════════ 7. Shortcuts ═══════════════════════ -->
+<h2 id="shortcuts">7. Keyboard shortcuts</h2>
+
+<table>
+  <thead><tr><th>Shortcut</th><th>Action</th><th>Scope</th></tr></thead>
+  <tbody>
+    <tr><td><span class="key">⌘ 1</span>–<span class="key">⌘ 9</span></td><td>Switch to workspace 1–9 of the active project</td><td>Active window</td></tr>
+    <tr><td><span class="key">⌃ ⇥</span> / <span class="key">⌃ ⇧ ⇥</span></td><td>Next / previous project (tab)</td><td>Active window</td></tr>
+    <tr><td><span class="key">⌘ ⌥ →</span> / <span class="key">⌘ ⌥ ←</span></td><td>Next / previous pane tab within focused pane</td><td>Focused pane</td></tr>
+    <tr><td><span class="key">⌘ D</span></td><td>Split pane horizontally</td><td>Focused pane</td></tr>
+    <tr><td><span class="key">⌘ ⇧ D</span></td><td>Split pane vertically</td><td>Focused pane</td></tr>
+    <tr><td><span class="key">⌘ T</span></td><td>New project tab (opens project picker)</td><td>Window</td></tr>
+    <tr><td><span class="key">⌘ N</span></td><td>New workspace in active project</td><td>Active project</td></tr>
+    <tr><td><span class="key">⌘ W</span></td><td>Close active pane tab. If last tab, close the pane. If last pane, close the workspace.</td><td>Context-sensitive</td></tr>
+    <tr><td><span class="key">⌘ ⇧ W</span></td><td>Close active project tab</td><td>Window</td></tr>
+    <tr><td><span class="key">⌘ K</span></td><td>Command palette (search projects, workspaces, panes, commands)</td><td>Global</td></tr>
+    <tr><td><span class="key">⌘ B</span></td><td>Toggle sidebar</td><td>Window</td></tr>
+    <tr><td><span class="key">⌘ J</span></td><td>Jump to next unread signal (cycles actionable → informational)</td><td>Window</td></tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════ 8. State & persistence ═══════════════════════ -->
+<h2 id="state">8. State &amp; persistence</h2>
+
+<ul>
+  <li><strong>Project list</strong>: persisted globally (across windows). Each has <code>{ id, name, color, repoPath, serviceConfig, lastOpenedAt }</code>.</li>
+  <li><strong>Window state</strong>: persisted per-window — which project tabs are open, which is active, sidebar width, split geometry per workspace.</li>
+  <li><strong>Workspace state</strong>: persisted per-workspace — pane layout, per-pane tab list, scrollback, agent conversation state.</li>
+  <li><strong>Signals</strong>: in-memory per session. "Seen" state is per user-visit to the app (resets on relaunch). Bells clear on close.</li>
+  <li><strong>Services</strong>: keep running even when no workspace in the project is open. Stopping services is an explicit user action.</li>
+  <li><strong>Closing a project tab</strong>: does NOT stop services or kill agents. Use "Quit project" menu item for that.</li>
+</ul>
+
+<!-- ═══════════════════════ 9. Edge cases ═══════════════════════ -->
+<h2 id="edge-cases">9. Edge cases</h2>
+
+<h3>Empty project</h3>
+<p>Project tab with zero workspaces: sidebar shows the repo row + services (if any), and the main content area shows an empty-state card with "New workspace" CTA.</p>
+
+<h3>Many workspaces</h3>
+<p>Sidebar workspace list is scrollable. No artificial cap. If &gt;15 workspaces, show a search input at the top of the list (focused via <code>⌘F</code> while sidebar is focused).</p>
+
+<h3>Many projects</h3>
+<p>When project tabs overflow, show a chevron "more" menu at the right of the tab strip (same pattern as browsers). Never shrink tabs below 100px; always scroll.</p>
+
+<h3>Same directory, multiple agents</h3>
+<p>This is explicitly supported and was a motivating case. Each agent lives in its own pane tab. The sidebar workspace row aggregates "2 agents need input" rather than showing two identical rows. The expanded per-pane detail in the active row disambiguates.</p>
+
+<h3>Drag-out to new window</h3>
+<p>A single-tab window still shows the tab strip (so the gesture is reversible). Dragging the last tab back to an existing window merges them.</p>
+
+<!-- ═══════════════════════ 10. Open questions ═══════════════════════ -->
+<h2 id="open-questions">10. Open questions (flag for the coding agent)</h2>
+
+<ul>
+  <li><strong>Pulse duration</strong>: spec says 8 seconds. Needs to feel right — test and tune.</li>
+  <li><strong>Bell auto-clear</strong>: 5s is arbitrary. Consider configurable per-user.</li>
+  <li><strong>Sidebar search</strong>: threshold of 15 workspaces is a guess. May be better to always show the input, ghost-faded, and activate on typing.</li>
+  <li><strong>Expanded workspace pane list</strong>: currently only active workspace expands. Consider letting the user pin-expand others.</li>
+  <li><strong>macOS idioms</strong>: the tab bar is custom (mimics Arc/Chrome rather than NSTabBar). Decide whether to adopt native NSWindowTab or keep the custom treatment for brand identity.</li>
+  <li><strong>Accessibility</strong>: all color-coded signals need a secondary encoding (icon or text) for colorblind users. The dot + text-pip combination starts to address this; audit fully.</li>
+  <li><strong>Status-bar / Dock integration</strong>: when the app is backgrounded, actionable signals should surface via notification center and/or the Dock badge. Spec that separately.</li>
+</ul>
+
+<div class="footer">
+  <a href="Final Design.html">← Back to Final Design</a>
+  &nbsp;·&nbsp;
+  <a href="Cmux Sidebar Explorations.html">Full exploration canvas</a>
+</div>
+
+</div>
+</body>
+</html>
