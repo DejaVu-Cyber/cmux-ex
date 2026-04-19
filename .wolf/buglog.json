@@ -1,0 +1,17 @@
+{
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-04-19T19:25:08.258Z",
+      "file": "../../../../tmp/cmux-phase-a-tickets.md",
+      "root_cause": "Missing null check",
+      "fix": "Added optional chaining",
+      "category": "null-safety",
+      "tags": [
+        "null-check"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-04-19T19:25:08.258Z"
+    }
+  ]
+}
