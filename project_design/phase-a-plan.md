@@ -177,6 +177,7 @@ final class ProjectRegistry: ObservableObject {
 - Missing file → empty registry, no throw.
 - Corrupt JSON throws a specific error; existing file preserved.
 - `byCanonicalPath` matches byte-equal canonical paths only.
+- Decoding a JSON that contains an unknown `serviceConfig` key for a project must not fail and must not surface the key on the in-memory `Project` (criterion #17 — `serviceConfig` is Phase C; Phase A persisters must round-trip without introducing it).
 
 **Constraints:**
 - Use `FileManager.replaceItemAt` via a temp file in the same directory; never write directly to `projects.json`.
@@ -372,7 +373,7 @@ enum ProjectMigration {
 **Constraints:**
 - `ProjectMigration` must be pure (no `FileManager`, no global singletons). Disk side effects are the caller's job.
 - Bookmark creation during migration may fail; project still created with `bookmarkData=nil` (per §10 failure matrix).
-- Color assignment uses `ProjectColorHash` (Task 15); for this task, use a deterministic stub and wire real hash in Task 15.
+- Color assignment uses `ProjectColorHash` (created in Task 9); for this task, use a deterministic stub and replace with the real hash call when Task 9 lands.
 
 **Depends on:** Tasks 1, 2, 4, 5.
 
@@ -647,6 +648,7 @@ struct AnySignalRollup {
 - Updater: pill renders; `Receive nightly builds` toggle persists.
 - Settings: custom shortcut round-trips via `~/.config/cmux/settings.json`.
 - Debug: `Debug > Debug Windows > Project Tab Debug` opens.
+- No pane resurrection (criterion #16): relaunch a session with live Claude/shell panes; after restore, panes must show as fresh processes (no conversation continuation, no rerunning of last command).
 
 **Constraints:**
 - Run via CI (`gh workflow run test-e2e.yml`) per CLAUDE.md — never locally against an untagged build.
