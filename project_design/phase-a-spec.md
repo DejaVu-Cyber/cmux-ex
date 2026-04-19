@@ -115,9 +115,15 @@ Reads: version mismatch → the app does NOT wipe the global registry; it refuse
 
 ### 3.2 · Per-window snapshot evolution
 
-`AppSessionSnapshot` (`Sources/SessionPersistence.swift`) schema bumps from `v2` → `v3`. New shape:
+`AppSessionSnapshot` (`Sources/SessionPersistence.swift`) schema bumps from `v2` → `v3`. Version lives on the top-level `AppSessionSnapshot.version`; `SessionWindowSnapshot` has no version field. New shape:
 
 ```swift
+struct AppSessionSnapshot: Codable {
+    let version: Int                              // 3 after Phase A
+    let windows: [SessionWindowSnapshot]
+    // ...existing top-level fields preserved
+}
+
 struct SessionWindowSnapshot: Codable {
     // Existing fields preserved: geometry, etc.
     let openProjectIds: [UUID]
@@ -197,8 +203,8 @@ case selectProjectByNumber  // default ⌃⌘1..9  (Ctrl+Cmd+1..9, switch projec
 | Action | Today | Phase A default | Rationale |
 |---|---|---|---|
 | `newSurface` (new pane tab) | `⌘T` | `⌘⇧T` | `⌘T` promoted to new-project to match visual tab hierarchy |
-| `toggleFileExplorer` | `⌘⌥B` | `⌘⌥B` (unchanged) | `⌘B` now reserved for `toggleSidebar` (see below) |
-| new: `toggleSidebar` | — | `⌘B` | Matches spec; distinct from file explorer |
+| `toggleFileExplorer` | `⌘⌥B` | `⌘⌥B` (unchanged) | Distinct from sidebar toggle |
+| `toggleSidebar` (existing, unchanged) | `⌘B` | `⌘B` | Already bound at `Cmd+B` per `KeyboardShortcutSettings.swift:173`. Listed here only to make the two-toggle distinction explicit. |
 
 ### 6.3 · Unchanged
 
@@ -288,6 +294,8 @@ Every `workspace.*` method gains optional `projectId`. Resolution:
 - If `window_id` and `projectId` both present and mismatched (project not open in window): `project_not_open_in_window`.
 - If `projectId` absent: route to the active project in the resolved window.
 - If no active project in the resolved window (window has 0 open projects — possible in first-launch wizard): `no_active_project`.
+- If the resolved project `isGhost`: mutating `workspace.*` calls (`create`, `close`, `select`-that-would-spawn-input, `rename`, `remote.*`) return `repo_unavailable`. Read-only queries (`list`, `current`, surface metadata) succeed.
+- Phase B/C/D-only commands accidentally dispatched in a Phase A build return `unsupported_in_phase_a` rather than a silent 404; the canonical list in §7.3 retains this code even though no Phase A method returns it in the happy path.
 
 ### 7.3 · Canonical error codes
 
@@ -305,7 +313,7 @@ Per CLAUDE.md socket focus policy, only focus-intent commands mutate app focus:
 ### 8.1 · Top project tab strip (`Sources/Projects/ProjectTabStripView.swift`)
 
 - Height: 36 px. Traffic lights reserved on the left (standard macOS inset).
-- Tab min width: 100 px. Tab max width: 200 px.
+- Tab min width: **100 px**. Tab max width: 200 px. (Spec.html §2's 140 px entry is superseded by Spec.html §9's "Never shrink tabs below 100 px"; Phase A adopts the 100 px floor everywhere.)
 - Overflow: when the sum of tabs' widths exceeds available space:
   - All tabs clamp at 100 px before scrolling engages.
   - Then horizontal scroll. No shrink below 100 px.
@@ -340,7 +348,7 @@ Per CLAUDE.md socket focus policy, only focus-intent commands mutate app focus:
 
 ### 8.5 · Ghost project tab
 
-- Triggered when canonical `repoPath` does not exist at launch, OR bookmark resolution returns an inaccessible target.
+- Triggered when canonical `repoPath` does not exist at launch, OR bookmark resolution returns an inaccessible target. `isGhost` is a runtime-derived state (`!pathExists(canonical(repoPath)) || !bookmarkResolves()`); it is **not** a persisted field on `Project`.
 - Tab style: desaturated swatch + name in `fg3`. The × remains enabled.
 - Sidebar: repo row shows path in `fg3` with icon `exclamationmark.triangle`. Below it, a prominent card:
   - Title: "Repo unavailable"
@@ -372,9 +380,9 @@ From QA review, adopted as-is:
 
 1. `name` must be non-empty after trim, max 80 UTF-16 code units.
 2. `monogram` must be exactly 1 grapheme cluster.
-3. `workspaceIds` order must equal visible sidebar order.
+3. `ProjectContainer.workspaces` order must equal visible sidebar order.
 4. Every persisted workspace must have exactly one existing `parentProjectId`; load must drop or repair orphaned workspaces deterministically (dropped + logged).
-5. A project with `workspaceIds=[]` must render the repo row and empty-state card, must not auto-create a fallback workspace on restore, and closing the final workspace must leave the project tab intact.
+5. A project with `ProjectContainer.workspaces == []` must render the repo row and empty-state card, must not auto-create a fallback workspace on restore, and closing the final workspace must leave the project tab intact.
 6. Given the same canonical `repoPath`, the default `paletteKey` must be identical across launches and across windows on the same app version. User override fully replaces the hashed value until explicitly reset.
 7. Creating multiple workspaces whose working directory normalizes to the same path is allowed. The sidebar must preserve insertion order and expose distinct workspace IDs. No Phase A operation may create, delete, rename, or check out a git worktree.
 8. Project tabs must never render narrower than 100 px or wider than 200 px; overflow must expose an explicit overflow affordance; project names longer than available width must truncate with ellipsis.
