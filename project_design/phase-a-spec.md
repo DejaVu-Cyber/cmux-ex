@@ -457,6 +457,110 @@ Per CLAUDE.md testing policy, all UI and socket tests run via CI (`gh workflow r
 
 For each regression test added, follow the two-commit pattern from CLAUDE.md: failing test commit (red CI) then fix commit (green CI).
 
+## 12a · Preserved behaviors (must not regress)
+
+Phase A wraps existing cmux in a new container layer; it does not rewrite terminal, browser, notification, updater, or CLI behavior. This section inventories what ships today and must continue working unchanged. Each item cites existing code; the refactor touches these areas only where explicitly called out elsewhere in this spec.
+
+### Persistence & restore
+
+- Session snapshot preserves window frame, display id, sidebar width (180–600), tabManager state, pane layout per workspace, scrollback replay with ANSI-safe truncation. `Sources/SessionPersistence.swift:1–363`, `SessionScrollbackReplayStore.replayEnvironment()` (lines 41–66).
+- `CMUX_DISABLE_SESSION_RESTORE=1` and test-mode env flags suppress autorestore. `Sources/SessionPersistence.swift:88–137`.
+- Window-frame fit-to-current-display on restore. `AppDelegate.resolvedWindowFrame()`.
+- Tagged dev builds isolate snapshot file via bundle id. `SessionPersistenceStore.defaultSnapshotFileURL()` lines 404–428.
+
+**Refactor note:** the v2→v3 migration (§5) must round-trip all of the above; the v3 snapshot serializer must include every field the v2 serializer wrote.
+
+### Multi-window
+
+- `Cmd+Shift+N` creates a window with its own `TabManager`. `AppDelegate.createMainWindow()`.
+- Window identity today = `ObjectIdentifier(NSWindow)`; `MainWindowContext` map is keyed by this. Not a UUID. Phase A refactor preserves this keying — do not change to UUID opportunistically.
+- Close-last-workspace closes window per user setting. `TabManager.closeWorkspace()` at line 3803; `LastSurfaceCloseShortcutSettings.closesWorkspace()`.
+- v2 `workspace.move_to_window` and `window.list/current/focus/create/close` (added 2026-02-11) must continue working; Phase A adds `project_id` where relevant but does not remove them.
+
+### Sidebar
+
+- Workspace drag-reorder, context-menu Move Up / Move Down, edge auto-scroll during drag, drop-indicator canonicalization (single insertion boundary between rows), no-op edge suppression (per PROJECTS.md 2026-02-12).
+- `Cmd`-only hold reveals `Cmd+1..9` badges on workspace rows; delayed reveal, canceled by non-modifier keys (PROJECTS.md 2026-02-12). Phase A: these hints remain tied to **workspace selection within the active project**; semantics of the shortcut itself are unchanged.
+- Top sidebar blur scrim under titlebar controls during scroll.
+- Sidebar footer in debug builds: update pill + DEV-build indicator (PROJECTS.md 2026-02-12).
+
+### Shortcut-sensitive flows (preserve unless §6 explicitly remaps)
+
+- `Cmd+W` close confirmation path including running-process dialog bypass after user confirm (PROJECTS.md 2026-02-09). Phase A extends this with cascade per §6.4; existing dialogs stay.
+- `Ctrl+D` shell exit → close pane/workspace/window policy (PROJECTS.md 2026-02-09). Cascade logic in §6.4 replaces and must cover the same cases.
+- WKWebView must not consume app menu shortcuts (PROJECTS.md 2026-02-09). Key-equivalent routing through main menu.
+- `Cmd+L` context-aware (focus omnibar when browser focused; open browser when terminal focused) (PROJECTS.md 2026-02-12).
+- `Cmd+D` / `Cmd+Shift+D` split, `Cmd+Alt+D` / `Cmd+Alt+Shift+D` browser split, all focus-move `Cmd+Alt+Arrow`, `Cmd+Shift+L` flash focused panel. All unchanged.
+
+### Notifications
+
+- Per-workspace rollups on sidebar rows; unread dots on bonsplit pane tabs (PROJECTS.md 2026-02-09). `Sources/TerminalNotificationStore.swift`.
+- Notifications popover (`Cmd+I` toggle, `Cmd+Shift+U` jump to unread, `Esc` dismiss). `NotificationsPage.swift`.
+- Menu bar `Notifications` menu with inline recent-row previews (PROJECTS.md 2026-02-12).
+- Menu bar extra with unread badge glyph on status icon, quit action, per-tag dev-build hint line (PROJECTS.md 2026-02-12).
+- Dock badge unread count (with disable toggle). `AppIconDockTilePlugin.swift`.
+
+**Refactor note:** the any-signal dot on project tabs (§8.4) reads from the same `TerminalNotificationStore`; do not introduce a parallel store.
+
+### Browser panels
+
+- Omnibar state machine (focus/editing/popup), Chrome-like Escape / click-outside behavior (PROJECTS.md 2026-02-10).
+- `Cmd+R` reload, default Safari UA, Google/DDG/Bing search engine selection, omnibar suggestions popup.
+- Browser back/forward (`Cmd+[`/`Cmd+]`), reload, zoom, developer tools.
+- Browser split (`Cmd+D`/`Cmd+Shift+D` from webview or omnibar — PROJECTS.md 2026-02-12).
+- Loading spinner in tab icon (PROJECTS.md 2026-02-10).
+- Inactive-pane favicon color preservation in Bonsplit tabs (PROJECTS.md 2026-02-13).
+
+### Terminal / pane latency invariants
+
+Per CLAUDE.md "Typing-latency-sensitive paths":
+- `TabItemView` `Equatable` + `.equatable()` — do not add `@EnvironmentObject`/`@ObservedObject`/`@Binding` without updating `==`.
+- `WindowTerminalHostView.hitTest()` pointer-only gate in `TerminalWindowPortal.swift` — drag/sidebar routing only on pointer events.
+- `TerminalSurface.forceRefresh()` no-alloc path — called every keystroke.
+- `SurfaceSearchOverlay` mounted from `GhosttySurfaceScrollView` (AppKit portal), not from SwiftUI panel containers.
+
+**Refactor note:** new `ProjectContainer` is a SwiftUI observable but must not participate in any per-keystroke path. Views bound to project identity should not read `@Published` project fields inside hot pane bodies.
+
+### Files & drag-drop
+
+- File drop onto terminal inserts shell-escaped paths (regression covered by `tests/test_file_drop_paths.py`, PROJECTS.md 2026-02-12).
+- Tab drag-drop across panes (bonsplit tab bar full-width drop target, tab-bar empty-space drops, no-op right-of-self suppression — PROJECTS.md 2026-02-10).
+- Custom `UTType`s declared in `Resources/Info.plist` (`com.splittabbar.tabtransfer`, `com.cmux.sidebar-tab-reorder`).
+
+### Services, CLI, automation
+
+- cmuxd socket v1 and v2 APIs (`docs/v2-api-migration.md`); all existing `workspace.*`, `window.*`, `surface.*`, `pane.*`, `browser.*` commands. Phase A adds `project.*` and an optional `projectId` on `workspace.*`; it does not remove or rename anything.
+- CLI: `cmux identify`, `cmux capabilities`, `list-panes`, `list-pane-surfaces`, `focus-pane`, `new-pane`, `new-surface`, `close-surface`, `drag-surface-to-split`, `refresh-surfaces`, `surface-health`, `focus-webview`, `is-webview-focused`, `trigger-flash` (PROJECTS.md 2026-02-11). All preserved.
+- Finder services: `New Workspace Here`, `New Window Here` (PROJECTS.md 2026-02-12). Both routed via existing handlers; Phase A: "Here" creates a workspace inside the active project if the resolved path is inside that project's canonical `repoPath`, else prompts whether to create a new project. (Explicit UX decision — record in wizard flow.)
+- Socket focus policy (CLAUDE.md): non-focus commands must not steal focus; §7.4 extends this to `project.*`.
+- Socket threading policy (CLAUDE.md): off-main by default for telemetry commands; `project.*` mutation is main-actor (structural changes), telemetry on the new project (none in Phase A) follows off-main rule.
+
+### Updater & menu bar
+
+- Update pill, nightly channel toggle, Sparkle prompt suppression, production update log capture (PROJECTS.md 2026-02-13). Unchanged.
+- Menu bar extra debug window for tuning (`Debug > Debug Windows`). Unchanged.
+
+### Settings & localization
+
+- `~/.config/cmux/settings.json` round-trips every `KeyboardShortcutSettings.Action`. Phase A's new actions (`newProject`, `closeProject`, `nextProject`, `prevProject`, `selectProjectByNumber`) conform. `KeyboardShortcutSettingsFileStore.swift`.
+- New-workspace placement preference (`Top` / `After current` / `End`) continues to apply **within the active project**. `TabManager` placement logic unchanged.
+- All user-facing strings go through `String(localized: "key", defaultValue: "…")` with keys in `Resources/Localizable.xcstrings` covering English and Japanese. Phase A adds entries for every new string in §8 (wizard, ghost tab, project-close confirm, monogram editor).
+- Accessibility identifiers on every new control for UI tests + VoiceOver (CLAUDE.md implicit).
+
+### Debug
+
+- `Debug > Debug Windows` menu (Sidebar, Background, Menu Bar Extra, Open All — PROJECTS.md 2026-02-12). Phase A adds **Project Tab Debug** window (tuning for monogram contrast, tab width bounds, any-signal dot visibility).
+- Debug event log (`dlog`) with `#if DEBUG` wrappers preserved; Phase A adds events: `project.select`, `project.close`, `project.dragReorder`, `project.ghostState.entered/exited`.
+- Tagged dev builds (`./scripts/reload.sh --tag <name>`) preserve all the above with per-tag isolation (bundle id, socket, derived data, debug log).
+
+## 12b · Top regression risks (pin to §13 checklist)
+
+Each rollout step in §13 must explicitly verify:
+
+1. **Window identity keying** — `MainWindowContext` remains `ObjectIdentifier`-keyed. Do not "opportunistically" introduce window UUIDs. Restore must bind snapshot → window before `TabManager` receives any events.
+2. **UUID semantics for panels / workspaces / panes** — preserved globally within a window, not scoped to a `ProjectContainer`. Sidebar reorder and selection dictionaries currently use those UUIDs; a container-scoped rekeying would silently break selection.
+3. **Notification store routing** — `TerminalNotificationStore` stays per-window (not per-container, not app-singleton). Any-signal dot on project tab reads from the same store via the new container's workspace set.
+
 ## 12 · Non-goals (explicit)
 
 - No services, service UI, or service runtime (Phase C).
@@ -487,4 +591,4 @@ Recommended decomposition into plan units (writing-plans will elaborate):
 10. Accessibility pass + localization strings.
 11. Tests (unit, socket, UI) layered after each of the above.
 
-Each step should leave the build green and the app usable.
+Each step should leave the build green and the app usable. After every step, verify the §12b regression risks (window-identity keying, UUID semantics, notification routing) and spot-check a representative item from each §12a area affected by that step (e.g., after step 2, retest a `Cmd+W` cascade including running-process confirm; after step 6, retest `Cmd+Shift+L` flash, `Cmd+L` context-aware browser open, `Cmd+I` notifications popover).

@@ -17,7 +17,7 @@ Three nested concepts:
 
 1. **Project** — top-level unit, 1:1 with a repo. User-assigned name, monogram, color. Represented as a browser-style tab at the top of the window.
 2. **Workspace** — a working context inside a project (typically a git branch/worktree or an ad-hoc directory). Listed in the sidebar of the active project. A project has 0..N workspaces.
-3. **Pane** — a running agent or shell inside a workspace. Split-grid inside the main content area; each pane has its own tab strip.
+3. **Pane** — a running agent, shell, or browser inside a workspace. Split-grid inside the main content area; each pane has its own tab strip.
 
 Pane is what cmux already has. Workspace is what cmux calls a workspace today (minus top-level status — it's now a child of a project). Project is new.
 
@@ -190,6 +190,10 @@ var repoToWindow: [String: (windowId: ObjectIdentifier, projectId: UUID)]
 - Phase C service supervisor: reuse Ghostty's PTY infra or separate `Process`-based?
 - Phase D drag-out: does dragging the last project tab close the source window or keep it empty?
 - Future identity upgrade: opt-in re-fingerprint-my-projects one-time migration, or transparent on next create?
+
+## Behaviors preserved across all phases
+
+Every phase wraps existing cmux without replacing it. The concrete inventory of behaviors that must not regress — session restore, multi-window, sidebar drag/drop, notifications, browser panels, terminal latency paths, Finder services, CLI/socket API, updater, settings, localization — lives in `phase-a-spec.md §12a`. Later phases add to the wrapper; they do not rewrite what's wrapped. If a phase would alter any §12a behavior, that phase's spec must call out the change explicitly, not absorb it silently.
 
 ## Out of scope for the whole plan
 
