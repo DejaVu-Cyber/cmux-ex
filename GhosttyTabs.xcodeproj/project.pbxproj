@@ -20,6 +20,8 @@
 		D9400104A1B2C3D4E5F60718 /* ProjectModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9400004A1B2C3D4E5F60718 /* ProjectModelTests.swift */; };
 		D9500101A1B2C3D4E5F60718 /* ProjectRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9500001A1B2C3D4E5F60718 /* ProjectRegistry.swift */; };
 		D9500102A1B2C3D4E5F60718 /* ProjectRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9500002A1B2C3D4E5F60718 /* ProjectRegistryTests.swift */; };
+		D9600101A1B2C3D4E5F60718 /* ProjectDuplicateRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9600001A1B2C3D4E5F60718 /* ProjectDuplicateRegistry.swift */; };
+		D9600102A1B2C3D4E5F60718 /* ProjectDuplicateRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9600002A1B2C3D4E5F60718 /* ProjectDuplicateRegistryTests.swift */; };
 			A5001001 /* cmuxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001011 /* cmuxApp.swift */; };
 			A5001002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001012 /* ContentView.swift */; };
 			E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */; };
@@ -233,6 +235,8 @@
 		D9400004A1B2C3D4E5F60718 /* ProjectModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectModelTests.swift; sourceTree = "<group>"; };
 		D9500001A1B2C3D4E5F60718 /* ProjectRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/ProjectRegistry.swift; sourceTree = "<group>"; };
 		D9500002A1B2C3D4E5F60718 /* ProjectRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectRegistryTests.swift; sourceTree = "<group>"; };
+		D9600001A1B2C3D4E5F60718 /* ProjectDuplicateRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/ProjectDuplicateRegistry.swift; sourceTree = "<group>"; };
+		D9600002A1B2C3D4E5F60718 /* ProjectDuplicateRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDuplicateRegistryTests.swift; sourceTree = "<group>"; };
 			A5001000 /* cmux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cmux.app; sourceTree = BUILT_PRODUCTS_DIR; };
 			F1000002A1B2C3D4E5F60718 /* cmuxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmuxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 			7E7E6EF344A568AC7FEE3715 /* cmuxUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmuxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -552,6 +556,7 @@
 				D9400001A1B2C3D4E5F60718 /* RepoPath.swift */,
 				D9400002A1B2C3D4E5F60718 /* Project.swift */,
 				D9500001A1B2C3D4E5F60718 /* ProjectRegistry.swift */,
+				D9600001A1B2C3D4E5F60718 /* ProjectDuplicateRegistry.swift */,
 				FE001001 /* FileExplorerStore.swift */,
 				FE001002 /* FileExplorerView.swift */,
 				FE003001 /* SessionIndexStore.swift */,
@@ -657,6 +662,7 @@
 					D9400003A1B2C3D4E5F60718 /* RepoPathTests.swift */,
 					D9400004A1B2C3D4E5F60718 /* ProjectModelTests.swift */,
 					D9500002A1B2C3D4E5F60718 /* ProjectRegistryTests.swift */,
+					D9600002A1B2C3D4E5F60718 /* ProjectDuplicateRegistryTests.swift */,
 				);
 				path = cmuxTests;
 				sourceTree = "<group>";
@@ -892,6 +898,7 @@
 				D9400101A1B2C3D4E5F60718 /* RepoPath.swift in Sources */,
 				D9400102A1B2C3D4E5F60718 /* Project.swift in Sources */,
 				D9500101A1B2C3D4E5F60718 /* ProjectRegistry.swift in Sources */,
+				D9600101A1B2C3D4E5F60718 /* ProjectDuplicateRegistry.swift in Sources */,
 				FE001101 /* FileExplorerStore.swift in Sources */,
 				FE001102 /* FileExplorerView.swift in Sources */,
 				FE003101 /* SessionIndexStore.swift in Sources */,
@@ -972,6 +979,7 @@
 					D9400103A1B2C3D4E5F60718 /* RepoPathTests.swift in Sources */,
 					D9400104A1B2C3D4E5F60718 /* ProjectModelTests.swift in Sources */,
 					D9500102A1B2C3D4E5F60718 /* ProjectRegistryTests.swift in Sources */,
+					D9600102A1B2C3D4E5F60718 /* ProjectDuplicateRegistryTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};
