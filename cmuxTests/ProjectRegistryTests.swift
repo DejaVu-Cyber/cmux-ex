@@ -98,6 +98,29 @@ final class ProjectRegistryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), futureBytes)
     }
 
+    func testLoadOlderVersionThrowsUnsupportedVersionAndLeavesBytesUntouched() throws {
+        let root = try makeTemporaryDirectory(named: "project-registry-older-version")
+        defer { try? fileManager.removeItem(at: root) }
+
+        let fileURL = try makeRegistryFileURL(in: root)
+        let olderBytes = try makeRegistryData(version: ProjectRegistry.currentVersion - 1, projects: [makeProject()])
+        try writeFixture(olderBytes, to: fileURL)
+
+        let existingProject = try makeProject(
+            id: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            name: "Loaded",
+            monogram: "L",
+            repoPath: "/tmp/loaded"
+        )
+        let registry = ProjectRegistry(fileURL: fileURL, projects: [existingProject.id: existingProject])
+
+        XCTAssertThrowsError(try registry.load()) { error in
+            XCTAssertEqual(error as? ProjectRegistryError, .unsupportedVersion)
+        }
+        XCTAssertEqual(registry.projects, [existingProject.id: existingProject])
+        XCTAssertEqual(try Data(contentsOf: fileURL), olderBytes)
+    }
+
     func testPartialWriteFailureLeavesExistingFileIntactAndThrows() throws {
         let root = try makeTemporaryDirectory(named: "project-registry-save-failure")
         defer { try? fileManager.removeItem(at: root) }
@@ -132,6 +155,36 @@ final class ProjectRegistryTests: XCTestCase {
             XCTAssertEqual(error as? ProjectRegistryError, .saveFailed)
         }
         XCTAssertEqual(try Data(contentsOf: fileURL), originalBytes)
+    }
+
+    func testInitialCreateFailureLeavesTargetMissingAndCleansTempFile() throws {
+        let root = try makeTemporaryDirectory(named: "project-registry-create-failure")
+        defer { try? fileManager.removeItem(at: root) }
+
+        let fileURL = try makeRegistryFileURL(in: root)
+        let registry = ProjectRegistry(
+            fileURL: fileURL,
+            fileManager: FailingMoveFileManager()
+        )
+        try registry.upsert(
+            makeProject(
+                id: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!,
+                name: "Initial",
+                monogram: "I",
+                repoPath: "/tmp/initial"
+            )
+        )
+
+        XCTAssertThrowsError(try registry.save()) { error in
+            XCTAssertEqual(error as? ProjectRegistryError, .saveFailed)
+        }
+        XCTAssertFalse(fileManager.fileExists(atPath: fileURL.path))
+
+        let siblingEntries = try fileManager.contentsOfDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            includingPropertiesForKeys: nil
+        )
+        XCTAssertEqual(siblingEntries, [])
     }
 
     func testByCanonicalPathReturnsExpectedProjectAndNilForUnknownPath() throws {
@@ -339,5 +392,33 @@ private final class FailingReplaceFileManager: AtomicFilePersistenceManaging {
 
     func replaceItem(at originalURL: URL, withItemAt newURL: URL) throws -> URL? {
         throw CocoaError(.fileWriteUnknown)
+    }
+}
+
+private final class FailingMoveFileManager: AtomicFilePersistenceManaging {
+    private let base = FileManager.default
+
+    func createDirectory(
+        at url: URL,
+        withIntermediateDirectories createIntermediates: Bool,
+        attributes: [FileAttributeKey: Any]?
+    ) throws {
+        try base.createDirectory(at: url, withIntermediateDirectories: createIntermediates, attributes: attributes)
+    }
+
+    func fileExists(atPath path: String) -> Bool {
+        base.fileExists(atPath: path)
+    }
+
+    func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    func removeItem(at url: URL) throws {
+        try base.removeItem(at: url)
+    }
+
+    func replaceItem(at originalURL: URL, withItemAt newURL: URL) throws -> URL? {
+        try base.replaceItem(at: originalURL, withItemAt: newURL)
     }
 }

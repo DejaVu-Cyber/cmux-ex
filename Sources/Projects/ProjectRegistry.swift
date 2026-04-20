@@ -55,25 +55,19 @@ final class ProjectRegistry: ObservableObject {
 
         let decoder = Self.makeJSONDecoder()
 
-        let versionEnvelope: VersionEnvelope
-        do {
-            versionEnvelope = try decoder.decode(VersionEnvelope.self, from: data)
-        } catch {
-            throw ProjectRegistryError.corruptFile
-        }
-
-        if versionEnvelope.version > Self.currentVersion {
-            throw ProjectRegistryError.incompatibleFuture
-        }
-        guard versionEnvelope.version == Self.currentVersion else {
-            throw ProjectRegistryError.unsupportedVersion
-        }
-
         let payload: RegistryPayload
         do {
             payload = try decoder.decode(RegistryPayload.self, from: data)
         } catch {
             throw ProjectRegistryError.corruptFile
+        }
+
+        if payload.version > Self.currentVersion {
+            throw ProjectRegistryError.incompatibleFuture
+        }
+        // Defensive gate for older persisted schemas once the registry version advances.
+        guard payload.version == Self.currentVersion else {
+            throw ProjectRegistryError.unsupportedVersion
         }
 
         var loadedProjects: [UUID: Project] = [:]
@@ -92,8 +86,9 @@ final class ProjectRegistry: ObservableObject {
             }
         )
 
+        let data = try Self.makeJSONEncoder().encode(payload)
+
         do {
-            let data = try Self.makeJSONEncoder().encode(payload)
             try AtomicFilePersistence.write(data, to: fileURL, fileManager: fileManager)
         } catch {
             throw ProjectRegistryError.saveFailed
@@ -130,10 +125,6 @@ final class ProjectRegistry: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
-}
-
-private struct VersionEnvelope: Decodable {
-    let version: Int
 }
 
 private struct RegistryPayload: Codable {
