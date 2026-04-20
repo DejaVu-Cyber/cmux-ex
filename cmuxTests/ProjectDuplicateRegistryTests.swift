@@ -47,10 +47,17 @@ final class ProjectDuplicateRegistryTests: XCTestCase {
         )
 
         XCTAssertEqual(registry.open(canonicalPath: canonicalPath, location: originalLocation), .opened)
-        XCTAssertEqual(
-            registry.open(canonicalPath: canonicalPath, location: conflictingLocation),
-            .conflict(originalLocation)
-        )
+        let result = registry.open(canonicalPath: canonicalPath, location: conflictingLocation)
+
+        guard case let .conflict(conflictLocation) = result else {
+            return XCTFail("Expected a conflict for a duplicate path in a different window.")
+        }
+
+        let roundTrippedWindowId: ObjectIdentifier = genericIdentity(conflictLocation.windowId)
+
+        XCTAssertTrue(type(of: roundTrippedWindowId) == ObjectIdentifier.self)
+        XCTAssertEqual(roundTrippedWindowId, originalLocation.windowId)
+        XCTAssertEqual(conflictLocation, originalLocation)
         XCTAssertEqual(registry.location(forCanonicalPath: canonicalPath), originalLocation)
     }
 
@@ -83,6 +90,25 @@ final class ProjectDuplicateRegistryTests: XCTestCase {
             registry.location(forCanonicalPath: "/Users/tester/projects/ghostty"),
             secondLocation
         )
+    }
+
+    func testSameWindowReopenSamePathUpdatesLocation() {
+        let registry = ProjectDuplicateRegistry()
+        let canonicalPath = "/Users/tester/projects/cmux-ex"
+        let window = NSObject()
+        let windowId = ObjectIdentifier(window)
+        let originalLocation = ProjectDuplicateRegistry.Location(
+            windowId: windowId,
+            projectId: UUID(uuidString: "67676767-6767-6767-6767-676767676767")!
+        )
+        let updatedLocation = ProjectDuplicateRegistry.Location(
+            windowId: windowId,
+            projectId: UUID(uuidString: "78787878-7878-7878-7878-787878787878")!
+        )
+
+        XCTAssertEqual(registry.open(canonicalPath: canonicalPath, location: originalLocation), .opened)
+        XCTAssertEqual(registry.open(canonicalPath: canonicalPath, location: updatedLocation), .opened)
+        XCTAssertEqual(registry.location(forCanonicalPath: canonicalPath), updatedLocation)
     }
 
     func testCloseOnUnknownPathIsNoOp() {
@@ -122,19 +148,6 @@ final class ProjectDuplicateRegistryTests: XCTestCase {
 
         XCTAssertEqual(results, [.opened, .conflict(firstLocation)])
         XCTAssertEqual(registry.location(forCanonicalPath: canonicalPath), firstLocation)
-    }
-
-    func testLocationWindowIdRoundTripsAsObjectIdentifier() {
-        let window = NSObject()
-        let location = ProjectDuplicateRegistry.Location(
-            windowId: ObjectIdentifier(window),
-            projectId: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!
-        )
-
-        let roundTripped: ObjectIdentifier = genericIdentity(location.windowId)
-
-        XCTAssertEqual(roundTripped, location.windowId)
-        XCTAssertTrue(type(of: roundTripped) == ObjectIdentifier.self)
     }
 
     private func genericIdentity<T>(_ value: T) -> T {

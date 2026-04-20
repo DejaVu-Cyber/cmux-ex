@@ -1,18 +1,27 @@
 import Foundation
 
+/// In-memory canonical-path registry used for cross-window duplicate-open checks.
+/// `AppDelegate` owns the process-wide instance via `shared()` once the open flow
+/// is wired in a later task.
 @MainActor
 final class ProjectDuplicateRegistry {
-    struct Location: Equatable {
+    struct Location: Equatable, Sendable {
         let windowId: ObjectIdentifier
         let projectId: UUID
     }
 
-    enum OpenResult: Equatable {
+    enum OpenResult: Equatable, Sendable {
         case opened
         case conflict(Location)
     }
 
+    private static let sharedInstance = ProjectDuplicateRegistry()
+
     private var locationsByCanonicalPath: [String: Location] = [:]
+
+    static func shared() -> ProjectDuplicateRegistry {
+        sharedInstance
+    }
 
     func location(forCanonicalPath canonicalPath: String) -> Location? {
         locationsByCanonicalPath[canonicalPath]
@@ -30,6 +39,8 @@ final class ProjectDuplicateRegistry {
         return .opened
     }
 
+    /// Callers must unregister before the owning window deallocates. A later
+    /// window can reuse the same `ObjectIdentifier` after deallocation.
     func close(canonicalPath: String, windowId: ObjectIdentifier) {
         guard let existing = locationsByCanonicalPath[canonicalPath], existing.windowId == windowId else {
             return
