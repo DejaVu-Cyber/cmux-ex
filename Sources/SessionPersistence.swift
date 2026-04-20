@@ -362,6 +362,75 @@ struct AppSessionSnapshot: Codable, Sendable {
     var windows: [SessionWindowSnapshot]
 }
 
+protocol AtomicFilePersistenceManaging {
+    func createDirectory(
+        at url: URL,
+        withIntermediateDirectories createIntermediates: Bool,
+        attributes: [FileAttributeKey: Any]?
+    ) throws
+    func fileExists(atPath path: String) -> Bool
+    func moveItem(at srcURL: URL, to dstURL: URL) throws
+    func removeItem(at url: URL) throws
+    @discardableResult
+    func replaceItem(at originalURL: URL, withItemAt newURL: URL) throws -> URL?
+}
+
+extension FileManager: AtomicFilePersistenceManaging {
+    @discardableResult
+    func replaceItem(at originalURL: URL, withItemAt newURL: URL) throws -> URL? {
+        try replaceItemAt(
+            originalURL,
+            withItemAt: newURL,
+            backupItemName: nil,
+            options: []
+        )
+    }
+}
+
+enum AtomicFilePersistence {
+    static func write(
+        _ data: Data,
+        to fileURL: URL,
+        fileManager: any AtomicFilePersistenceManaging = FileManager.default
+    ) throws {
+        let directory = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+
+        if let existingData = try existingData(at: fileURL), existingData == data {
+            return
+        }
+
+        let tempURL = siblingTemporaryFileURL(for: fileURL)
+
+        do {
+            try data.write(to: tempURL)
+            if fileManager.fileExists(atPath: fileURL.path) {
+                _ = try fileManager.replaceItem(at: fileURL, withItemAt: tempURL)
+            } else {
+                try fileManager.moveItem(at: tempURL, to: fileURL)
+            }
+        } catch {
+            try? fileManager.removeItem(at: tempURL)
+            throw error
+        }
+    }
+
+    private static func existingData(at fileURL: URL) throws -> Data? {
+        do {
+            return try Data(contentsOf: fileURL)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        } catch {
+            throw error
+        }
+    }
+
+    private static func siblingTemporaryFileURL(for fileURL: URL) -> URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent(".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp", isDirectory: false)
+    }
+}
+
 enum SessionPersistenceStore {
     static func load(fileURL: URL? = nil) -> AppSessionSnapshot? {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return nil }
@@ -376,14 +445,9 @@ enum SessionPersistenceStore {
     @discardableResult
     static func save(_ snapshot: AppSessionSnapshot, fileURL: URL? = nil) -> Bool {
         guard let fileURL = fileURL ?? defaultSnapshotFileURL() else { return false }
-        let directory = fileURL.deletingLastPathComponent()
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
             let data = try encodedSnapshotData(snapshot)
-            if let existingData = try? Data(contentsOf: fileURL), existingData == data {
-                return true
-            }
-            try data.write(to: fileURL, options: .atomic)
+            try AtomicFilePersistence.write(data, to: fileURL)
             return true
         } catch {
             return false
@@ -405,12 +469,7 @@ enum SessionPersistenceStore {
         bundleIdentifier: String? = Bundle.main.bundleIdentifier,
         appSupportDirectory: URL? = nil
     ) -> URL? {
-        let resolvedAppSupport: URL
-        if let appSupportDirectory {
-            resolvedAppSupport = appSupportDirectory
-        } else if let discovered = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            resolvedAppSupport = discovered
-        } else {
+        guard let cmuxSupportDirectory = cmuxApplicationSupportDirectory(appSupportDirectory: appSupportDirectory) else {
             return nil
         }
         let bundleId = (bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
@@ -421,9 +480,25 @@ enum SessionPersistenceStore {
             with: "_",
             options: .regularExpression
         )
-        return resolvedAppSupport
-            .appendingPathComponent("cmux", isDirectory: true)
+        return cmuxSupportDirectory
             .appendingPathComponent("session-\(safeBundleId).json", isDirectory: false)
+    }
+
+    static func projectsRegistryFileURL(appSupportDirectory: URL? = nil) -> URL? {
+        cmuxApplicationSupportDirectory(appSupportDirectory: appSupportDirectory)?
+            .appendingPathComponent("projects.json", isDirectory: false)
+    }
+
+    private static func cmuxApplicationSupportDirectory(appSupportDirectory: URL? = nil) -> URL? {
+        let resolvedAppSupport: URL
+        if let appSupportDirectory {
+            resolvedAppSupport = appSupportDirectory
+        } else if let discovered = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            resolvedAppSupport = discovered
+        } else {
+            return nil
+        }
+        return resolvedAppSupport.appendingPathComponent("cmux", isDirectory: true)
     }
 }
 
