@@ -77,6 +77,18 @@ jobs:
 
       - name: Run Claude Code PR review
         if: steps.context.outputs.skip != 'true' && steps.context.outputs.count != '3'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: |
+          if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "Missing CLAUDE_CODE_OAUTH_TOKEN secret for this repository/workflow context." >&2
+            exit 1
+          fi
+          exec node -e 'process.exit(0)'
+
+      - name: Claude review
+        if: steps.context.outputs.skip != 'true' && steps.context.outputs.count != '3'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -195,6 +207,7 @@ jobs:
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(curl:*),Bash(gh:*)"
         env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
 
       - name: Set review status to success
@@ -244,3 +257,5 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
             actions: read
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
