@@ -33,8 +33,14 @@ final class WindowProjectManager: ObservableObject {
     ) {
         self.windowIdentity = ObjectIdentifier(owner)
         self.openProjectIds = openProjectIds
-        self.activeProjectId = activeProjectId
-        self.containers = containers
+        if openProjectIds.isEmpty {
+            self.activeProjectId = nil
+        } else if let activeProjectId, openProjectIds.contains(activeProjectId) {
+            self.activeProjectId = activeProjectId
+        } else {
+            self.activeProjectId = openProjectIds.first
+        }
+        self.containers = containers.filter { openProjectIds.contains($0.key) }
     }
 
     func openProject(_ project: Project, inserting: InsertPolicy) throws {
@@ -51,6 +57,8 @@ final class WindowProjectManager: ObservableObject {
 
         containers[project.id] = container
         openProjectIds.insert(project.id, at: insertionIndex(for: inserting))
+        // Phase A shells always focus the newly opened project. Background opens
+        // can layer on top of this API later without changing insert semantics.
         activeProjectId = project.id
     }
 
@@ -94,10 +102,8 @@ final class WindowProjectManager: ObservableObject {
         }
 
         openProjectIds = projectIds
-        if openProjectIds.isEmpty {
+        if projectIds.isEmpty {
             activeProjectId = nil
-        } else if let activeProjectId, !openProjectIds.contains(activeProjectId) {
-            self.activeProjectId = openProjectIds.first
         }
     }
 

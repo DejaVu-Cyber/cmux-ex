@@ -70,6 +70,17 @@ final class WindowProjectManagerTests: XCTestCase {
         XCTAssertEqual(manager.activeProjectId, second.id)
     }
 
+    func testOpenProjectDuplicateThrowsProjectAlreadyOpen() throws {
+        let manager = makeManager()
+        let project = try makeProject(id: "AAAAAAA0-AAAA-AAAA-AAAA-AAAAAAAAAAA0")
+
+        try manager.openProject(project, inserting: .atEnd)
+
+        XCTAssertThrowsError(try manager.openProject(project, inserting: .atEnd)) { error in
+            XCTAssertEqual(error as? WindowProjectManagerError, .projectAlreadyOpen(project.id))
+        }
+    }
+
     func testCloseActiveProjectSelectsNextProjectInOrder() throws {
         let manager = makeManager()
         let first = try makeProject(id: "AAAAAAA1-AAAA-AAAA-AAAA-AAAAAAAAAAA1")
@@ -130,6 +141,15 @@ final class WindowProjectManagerTests: XCTestCase {
         XCTAssertEqual(manager.activeProjectId, second.id)
     }
 
+    func testCloseProjectForMissingIdThrows() {
+        let manager = makeManager()
+        let missingId = UUID(uuidString: "DDDDDDD4-DDDD-DDDD-DDDD-DDDDDDDDDDD4")!
+
+        XCTAssertThrowsError(try manager.closeProject(missingId)) { error in
+            XCTAssertEqual(error as? WindowProjectManagerError, .projectNotOpen(missingId))
+        }
+    }
+
     func testSelectProjectForMissingIdThrows() throws {
         let manager = makeManager()
         let missingId = UUID(uuidString: "EEEEEEE1-EEEE-EEEE-EEEE-EEEEEEEEEEE1")!
@@ -156,6 +176,21 @@ final class WindowProjectManagerTests: XCTestCase {
         XCTAssertEqual(manager.activeProjectId, second.id)
 
         XCTAssertThrowsError(try manager.reorder(projectIds: [first.id, first.id, third.id])) { error in
+            XCTAssertEqual(error as? WindowProjectManagerError, .invalidProjectOrder)
+        }
+    }
+
+    func testReorderWithWrongCountThrows() throws {
+        let manager = makeManager()
+        let first = try makeProject(id: "F0F0F0F4-F0F0-F0F0-F0F0-F0F0F0F0F0F4")
+        let second = try makeProject(id: "F0F0F0F5-F0F0-F0F0-F0F0-F0F0F0F0F0F5")
+        let third = try makeProject(id: "F0F0F0F6-F0F0-F0F0-F0F0-F0F0F0F0F0F6")
+
+        try manager.openProject(first, inserting: .atEnd)
+        try manager.openProject(second, inserting: .atEnd)
+        try manager.openProject(third, inserting: .atEnd)
+
+        XCTAssertThrowsError(try manager.reorder(projectIds: [first.id, third.id])) { error in
             XCTAssertEqual(error as? WindowProjectManagerError, .invalidProjectOrder)
         }
     }
@@ -187,11 +222,9 @@ final class WindowProjectManagerTests: XCTestCase {
         let ownerView = NSView(frame: .zero)
         let expectedIdentity = ObjectIdentifier(ownerView)
         let manager = WindowProjectManager(owner: ownerView)
+        let publicIdentity: ObjectIdentifier = manager.windowIdentity
 
-        let roundTrippedIdentity: ObjectIdentifier = genericIdentity(manager.windowIdentity)
-
-        XCTAssertTrue(type(of: roundTrippedIdentity) == ObjectIdentifier.self)
-        XCTAssertEqual(roundTrippedIdentity, expectedIdentity)
+        XCTAssertEqual(publicIdentity, expectedIdentity)
     }
 
     private func makeManager() -> WindowProjectManager {
@@ -208,9 +241,5 @@ final class WindowProjectManagerTests: XCTestCase {
             bookmarkData: nil,
             lastOpenedAt: Date(timeIntervalSince1970: 1_713_720_000)
         )
-    }
-
-    private func genericIdentity<T>(_ value: T) -> T {
-        value
     }
 }
