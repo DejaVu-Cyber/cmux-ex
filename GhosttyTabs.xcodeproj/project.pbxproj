@@ -14,6 +14,10 @@
 		FE003103 /* RightSidebarPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE003003 /* RightSidebarPanelView.swift */; };
 		FE002101 /* FileExplorerRootResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE002001 /* FileExplorerRootResolverTests.swift */; };
 		FE002102 /* FileExplorerStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE002002 /* FileExplorerStoreTests.swift */; };
+		D9400101A1B2C3D4E5F60718 /* RepoPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9400001A1B2C3D4E5F60718 /* RepoPath.swift */; };
+		D9400102A1B2C3D4E5F60718 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9400002A1B2C3D4E5F60718 /* Project.swift */; };
+		D9400103A1B2C3D4E5F60718 /* RepoPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9400003A1B2C3D4E5F60718 /* RepoPathTests.swift */; };
+		D9400104A1B2C3D4E5F60718 /* ProjectModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9400004A1B2C3D4E5F60718 /* ProjectModelTests.swift */; };
 			A5001001 /* cmuxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001011 /* cmuxApp.swift */; };
 			A5001002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001012 /* ContentView.swift */; };
 			E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */; };
@@ -221,6 +225,10 @@
 		FE003003 /* RightSidebarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightSidebarPanelView.swift; sourceTree = "<group>"; };
 		FE002001 /* FileExplorerRootResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerRootResolverTests.swift; sourceTree = "<group>"; };
 		FE002002 /* FileExplorerStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerStoreTests.swift; sourceTree = "<group>"; };
+		D9400001A1B2C3D4E5F60718 /* RepoPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/RepoPath.swift; sourceTree = "<group>"; };
+		D9400002A1B2C3D4E5F60718 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/Project.swift; sourceTree = "<group>"; };
+		D9400003A1B2C3D4E5F60718 /* RepoPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepoPathTests.swift; sourceTree = "<group>"; };
+		D9400004A1B2C3D4E5F60718 /* ProjectModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectModelTests.swift; sourceTree = "<group>"; };
 			A5001000 /* cmux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cmux.app; sourceTree = BUILT_PRODUCTS_DIR; };
 			F1000002A1B2C3D4E5F60718 /* cmuxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmuxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 			7E7E6EF344A568AC7FEE3715 /* cmuxUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmuxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -537,6 +545,8 @@
 				A5001651 /* CmuxConfig.swift */,
 				A5001653 /* CmuxConfigExecutor.swift */,
 				A5001655 /* CmuxDirectoryTrust.swift */,
+				D9400001A1B2C3D4E5F60718 /* RepoPath.swift */,
+				D9400002A1B2C3D4E5F60718 /* Project.swift */,
 				FE001001 /* FileExplorerStore.swift */,
 				FE001002 /* FileExplorerView.swift */,
 				FE003001 /* SessionIndexStore.swift */,
@@ -639,6 +649,8 @@
 					C1A2B3C4D5E6F70800000002 /* CmuxConfigTests.swift */,
 					FE002001 /* FileExplorerRootResolverTests.swift */,
 					FE002002 /* FileExplorerStoreTests.swift */,
+					D9400003A1B2C3D4E5F60718 /* RepoPathTests.swift */,
+					D9400004A1B2C3D4E5F60718 /* ProjectModelTests.swift */,
 				);
 				path = cmuxTests;
 				sourceTree = "<group>";
@@ -871,6 +883,8 @@
 				A5001650 /* CmuxConfig.swift in Sources */,
 				A5001652 /* CmuxConfigExecutor.swift in Sources */,
 				A5001654 /* CmuxDirectoryTrust.swift in Sources */,
+				D9400101A1B2C3D4E5F60718 /* RepoPath.swift in Sources */,
+				D9400102A1B2C3D4E5F60718 /* Project.swift in Sources */,
 				FE001101 /* FileExplorerStore.swift in Sources */,
 				FE001102 /* FileExplorerView.swift in Sources */,
 				FE003101 /* SessionIndexStore.swift in Sources */,
@@ -948,6 +962,8 @@
 					C1A2B3C4D5E6F70800000001 /* CmuxConfigTests.swift in Sources */,
 					FE002101 /* FileExplorerRootResolverTests.swift in Sources */,
 					FE002102 /* FileExplorerStoreTests.swift in Sources */,
+					D9400103A1B2C3D4E5F60718 /* RepoPathTests.swift in Sources */,
+					D9400104A1B2C3D4E5F60718 /* ProjectModelTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};
