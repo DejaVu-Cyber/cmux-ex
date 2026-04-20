@@ -94,6 +94,35 @@ final class ProjectModelTests: XCTestCase {
         }
     }
 
+    func testValidatedMutatorsPreserveProjectInvariants() throws {
+        var project = try makeProject()
+
+        try project.setName("  Renamed  ")
+        try project.setMonogram("漢")
+        try project.setColor(.customHex("#a1b2c3"))
+        project.setCanonicalRepoPath("/Users/user/projects/renamed")
+
+        XCTAssertEqual(project.name, "Renamed")
+        XCTAssertEqual(project.monogram, "漢")
+        XCTAssertEqual(project.color, .customHex("#A1B2C3"))
+        XCTAssertEqual(project.repoPath, "/Users/user/projects/renamed")
+
+        XCTAssertThrowsError(try project.setName("   ")) { error in
+            XCTAssertEqual(error as? Project.NameError, .empty)
+        }
+        XCTAssertEqual(project.name, "Renamed")
+
+        XCTAssertThrowsError(try project.setMonogram("AB")) { error in
+            XCTAssertEqual(error as? Project.MonogramError, .multipleGraphemes)
+        }
+        XCTAssertEqual(project.monogram, "漢")
+
+        XCTAssertThrowsError(try project.setColor(.customHex("112233"))) { error in
+            XCTAssertEqual(error as? Project.ValidationError, .invalidColor(.invalidHex))
+        }
+        XCTAssertEqual(project.color, .customHex("#A1B2C3"))
+    }
+
     private func makeProject(color: ProjectColor = .palette(.green)) throws -> Project {
         try Project(
             id: UUID(uuidString: "D9B45AB0-0A5F-4A0F-B93E-6E0A4A6C6B4A")!,

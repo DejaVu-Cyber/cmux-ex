@@ -19,10 +19,12 @@ struct Project: Identifiable, Codable, Equatable, Hashable {
     }
 
     let id: UUID
-    var name: String
-    var monogram: String
-    var color: ProjectColor
-    var repoPath: String
+    private(set) var name: String
+    private(set) var monogram: String
+    private(set) var color: ProjectColor
+    // RepoPath.canonical(_:) is the only normalization authority. Project keeps
+    // repoPath as pure data so callers can canonicalize once at ingress.
+    private(set) var repoPath: String
     var bookmarkData: Data?
     var lastOpenedAt: Date
 
@@ -38,16 +40,28 @@ struct Project: Identifiable, Codable, Equatable, Hashable {
         lastOpenedAt: Date
     ) throws {
         self.id = id
-        self.name = try Self.validatedName(name)
-        self.monogram = try Self.validatedMonogram(monogram)
-        do {
-            self.color = try color.normalized()
-        } catch let error as ProjectColor.ValidationError {
-            throw ValidationError.invalidColor(error)
-        }
+        self.name = try Self.normalizedName(name)
+        self.monogram = try Self.normalizedMonogram(monogram)
+        self.color = try Self.normalizedColor(color)
         self.repoPath = repoPath
         self.bookmarkData = bookmarkData
         self.lastOpenedAt = lastOpenedAt
+    }
+
+    mutating func setName(_ raw: String) throws {
+        name = try Self.validatedName(raw)
+    }
+
+    mutating func setMonogram(_ raw: String) throws {
+        monogram = try Self.validatedMonogram(raw)
+    }
+
+    mutating func setColor(_ raw: ProjectColor) throws {
+        color = try Self.normalizedColor(raw)
+    }
+
+    mutating func setCanonicalRepoPath(_ canonicalPath: String) {
+        repoPath = canonicalPath
     }
 
     static func validatedName(_ raw: String) throws -> String {
@@ -73,6 +87,30 @@ struct Project: Identifiable, Codable, Equatable, Hashable {
             return true
         default:
             return false
+        }
+    }
+
+    private static func normalizedName(_ raw: String) throws -> String {
+        do {
+            return try validatedName(raw)
+        } catch let error as NameError {
+            throw ValidationError.invalidName(error)
+        }
+    }
+
+    private static func normalizedMonogram(_ raw: String) throws -> String {
+        do {
+            return try validatedMonogram(raw)
+        } catch let error as MonogramError {
+            throw ValidationError.invalidMonogram(error)
+        }
+    }
+
+    private static func normalizedColor(_ color: ProjectColor) throws -> ProjectColor {
+        do {
+            return try color.normalized()
+        } catch let error as ProjectColor.ValidationError {
+            throw ValidationError.invalidColor(error)
         }
     }
 
@@ -132,14 +170,11 @@ struct Project: Identifiable, Codable, Equatable, Hashable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        let validatedName = try Self.validatedName(name)
-        let validatedMonogram = try Self.validatedMonogram(monogram)
-        let normalizedColor = try color.normalized()
 
         try container.encode(id, forKey: .id)
-        try container.encode(validatedName, forKey: .name)
-        try container.encode(validatedMonogram, forKey: .monogram)
-        try container.encode(normalizedColor, forKey: .color)
+        try container.encode(name, forKey: .name)
+        try container.encode(monogram, forKey: .monogram)
+        try container.encode(color, forKey: .color)
         try container.encode(repoPath, forKey: .repoPath)
         try container.encodeIfPresent(bookmarkData, forKey: .bookmarkData)
         try container.encode(lastOpenedAt, forKey: .lastOpenedAt)

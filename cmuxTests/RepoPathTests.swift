@@ -58,6 +58,12 @@ final class RepoPathTests: XCTestCase {
         XCTAssertEqual(result, child.path)
     }
 
+    func testCanonicalExpandsTildeToHomeDirectory() throws {
+        let result = try RepoPath.canonical("~/")
+
+        XCTAssertEqual(result, fileManager.homeDirectoryForCurrentUser.path)
+    }
+
     func testCanonicalKeepsFilesystemCaseForExistingPath() throws {
         let root = try makeTemporaryDirectory(named: "repo-path-case")
         defer { try? fileManager.removeItem(at: root) }
@@ -65,6 +71,7 @@ final class RepoPathTests: XCTestCase {
         let actualDirectory = root.appendingPathComponent("MixedCase", isDirectory: true)
         try fileManager.createDirectory(at: actualDirectory, withIntermediateDirectories: true)
 
+        // macOS paths are case-preserving even when lookups are case-insensitive.
         let differentlyCasedInput = root
             .appendingPathComponent("mixedcase", isDirectory: true)
             .path
@@ -72,6 +79,24 @@ final class RepoPathTests: XCTestCase {
         let result = try RepoPath.canonical(differentlyCasedInput)
 
         XCTAssertEqual(result, actualDirectory.path)
+    }
+
+    func testCanonicalNormalizesNonexistentAbsolutePathsWithoutFilesystemChecks() throws {
+        let root = try makeTemporaryDirectory(named: "repo-path-missing")
+        defer { try? fileManager.removeItem(at: root) }
+
+        let expected = root.appendingPathComponent("Child", isDirectory: true)
+        let raw = root
+            .appendingPathComponent("Parent", isDirectory: true)
+            .appendingPathComponent("..", isDirectory: true)
+            .appendingPathComponent("Child", isDirectory: true)
+            .path
+
+        XCTAssertFalse(fileManager.fileExists(atPath: expected.path))
+
+        let result = try RepoPath.canonical(raw)
+
+        XCTAssertEqual(result, expected.path)
     }
 
     private func makeTemporaryDirectory(named prefix: String) throws -> URL {
