@@ -38,9 +38,14 @@ jobs:
         id: context
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "pr_number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+
+          ISSUE_ID=$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+\b' | head -n 1 || true)
+          echo "issue_id=$ISSUE_ID" >> "$GITHUB_OUTPUT"
 
           RETRY_LABEL=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels \
             --jq '[.[].name | select(startswith("review-retry-"))] | sort | last // "none"')
@@ -65,9 +70,28 @@ jobs:
       - name: Collect CI context
         if: steps.context.outputs.skip != 'true'
         id: ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "conclusion=not-run-in-this-workflow" >> "$GITHUB_OUTPUT"
-          echo "failed_jobs=" >> "$GITHUB_OUTPUT"
+          SHA="${{ github.event.pull_request.head.sha }}"
+          CHECKS_JSON=$(gh api repos/${{ github.repository }}/commits/$SHA/status --jq '{state: .state, statuses: [.statuses[] | {context, state, description}]}' 2>/dev/null || echo '{}')
+          CHECK_STATE=$(printf '%s' "$CHECKS_JSON" | jq -r '.state // "unknown"')
+          FAILED_CHECKS=$(printf '%s' "$CHECKS_JSON" | jq -r '[.statuses[]? | select(.state == "failure" || .state == "error") | .context] | join(", ")')
+          echo "conclusion=$CHECK_STATE" >> "$GITHUB_OUTPUT"
+          echo "failed_jobs=$FAILED_CHECKS" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize review decision
+        if: steps.context.outputs.skip != 'true' && steps.context.outputs.count != '3'
+        run: |
+          cat > /tmp/claude-review-decision.json <<'EOF'
+          {
+            "issue_id": "",
+            "verdict": "in_review",
+            "reason": "",
+            "summary": "",
+            "retry_increment": false
+          }
+          EOF
 
       - name: Skip if max retries reached
         if: steps.context.outputs.skip != 'true' && steps.context.outputs.count == '3'
@@ -98,49 +122,35 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.context.outputs.pr_number }}
+            LINEAR ISSUE ID: ${{ steps.context.outputs.issue_id }}
             CI conclusion: ${{ steps.ci.outputs.conclusion }}
             Failed CI jobs: ${{ steps.ci.outputs.failed_jobs }}
             Current retry count: ${{ steps.context.outputs.count }}
             Current retry label: ${{ steps.context.outputs.current_label }}
 
-            You are reviewing a PR created by Codex Symphony as part of an automated
-            development workflow on the cmux repo (macOS Swift/AppKit app with Ghostty
-            integration). Your job is to review the code AND decide what happens to the
-            linked Linear ticket.
+            Review this PR like a senior reviewer for cmux, a macOS Swift/AppKit app
+            with Ghostty integration.
 
             ## Instructions
 
-            1. Review the PR diff for correctness, regressions, security, and testing gaps.
-            2. Check the CI conclusion above.
-            3. Extract the Linear issue ID from the PR title or body. The prefix may vary,
-               but prefer patterns like `ABC-123`. If multiple issue IDs are present, use
-               the primary one referenced by the PR title first.
-            4. If no Linear issue ID is found, post GitHub review feedback only.
-               Do NOT attempt Linear API calls.
-            5. Check the retry count. If moving the ticket back would make this retry 3,
-               move the ticket to `In Review` instead and comment that human intervention
-               is needed after 3 automated retries.
-            6. Otherwise, decide and act:
-
-               - If CI FAILED: Move the Linear ticket to `Todo` and post a comment
-                 summarizing the CI failure. Use `gh` to inspect failed job details/logs
-                 if the summary above is insufficient.
-               - If CI passed but you found SUBSTANTIVE issues: Move the Linear ticket
-                 to `Todo` and post a comment with your findings and proposed fixes.
-               - If CI passed and the code is clean OR you only have minor nitpicks:
-                 Leave the ticket in `In Review`. Post review comments on the PR for
-                 human review.
-
-            7. ALWAYS post a summary comment on the Linear ticket when an issue ID is
-               available, regardless of outcome. Include: CI status, review verdict
-               (clean, nitpicks, substantive, failed), and a link to the PR.
-
-            This repository is cmux, a macOS Swift/AppKit app with Ghostty integration.
-            Read AGENTS.md and relevant local docs before commenting when they materially affect the review.
+            1. Review the diff for correctness, regressions, security, and testing gaps.
+            2. Leave GitHub review feedback for actionable issues.
+            3. Do not call Linear directly. The workflow will handle Linear updates.
+            4. Before finishing, overwrite `/tmp/claude-review-decision.json` with a
+               single JSON object using exactly this schema:
+               {
+                 "issue_id": "ABC-123 or empty string",
+                 "verdict": "todo" | "in_review",
+                 "reason": "one short sentence",
+                 "summary": "one short paragraph for the Linear comment",
+                 "retry_increment": true | false
+               }
+            5. Set `verdict` to `todo` only for clear blocking issues.
+            6. Set `retry_increment` to `true` only when `verdict` is `todo`.
+            7. Use the provided `LINEAR ISSUE ID` if non-empty; only leave `issue_id`
+               empty if no linked Linear ticket exists.
 
             ## cmux-specific review focus
-
-            Pay particular attention to:
 
             - `AGENTS.md` build/test policy: agents should use tagged debug builds and
               should not rely on fake local test evidence.
@@ -157,7 +167,7 @@ jobs:
 
             ## What counts as SUBSTANTIVE vs nitpick
 
-            SUBSTANTIVE (move to Todo):
+            SUBSTANTIVE (`verdict = "todo"`):
             - Behavioral regression or correctness bug
             - Security issue or secret-handling mistake
             - Missing validation or missing error handling with real user impact
@@ -171,44 +181,108 @@ jobs:
             - Non-blocking refactor suggestion
             - Documentation polish that is not required for correctness
 
-            When in doubt, err on the side of leaving the ticket in `In Review`. Only
-            move it back to `Todo` for clear issues that should block merge.
-
-            ## After deciding, update the retry label
-
-            If you moved the ticket to `Todo`, update the PR retry label using `gh`:
-            - Remove the current retry label, if any
-            - Add `review-retry-N`, where `N = current retry count + 1`
-
-            ## Linear API
-
-            Use `curl` to interact with Linear. The API key is available as `$LINEAR_API_KEY`.
-
-            To find the issue by identifier:
-            curl -s -X POST https://api.linear.app/graphql \
-              -H "Authorization: $LINEAR_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{"query": "{ issueSearch(filter: { identifier: { eq: \"ABC-123\" } }) { nodes { id identifier state { name } team { states { nodes { id name } } } } } }"}'
-
-            To update issue state:
-            curl -s -X POST https://api.linear.app/graphql \
-              -H "Authorization: $LINEAR_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{"query": "mutation { issueUpdate(id: \"ISSUE_UUID\", input: { stateId: \"STATE_UUID\" }) { success issue { identifier state { name } } } }"}'
-
-            To post a comment:
-            curl -s -X POST https://api.linear.app/graphql \
-              -H "Authorization: $LINEAR_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{"query": "mutation { commentCreate(input: { issueId: \"ISSUE_UUID\", body: \"Your comment here\" }) { success } }"}'
-
-            If any Linear API call fails, post a comment on the PR noting the failure so
-            it is visible and not silently lost.
+            When in doubt, leave `verdict` as `in_review`.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(curl:*),Bash(gh:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh:*),Bash(cat:*),Bash(printf:*),Bash(jq:*)"
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+
+      - name: Apply deterministic review outcome
+        if: steps.context.outputs.skip != 'true' && steps.context.outputs.count != '3'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          ISSUE_ID_FALLBACK: ${{ steps.context.outputs.issue_id }}
+          CURRENT_RETRY_LABEL: ${{ steps.context.outputs.current_label }}
+          CURRENT_RETRY_COUNT: ${{ steps.context.outputs.count }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          test -f /tmp/claude-review-decision.json
+          jq -e '.issue_id != null and .verdict != null and .reason != null and .summary != null and .retry_increment != null' /tmp/claude-review-decision.json >/dev/null
+
+          ISSUE_ID=$(jq -r '.issue_id' /tmp/claude-review-decision.json)
+          VERDICT=$(jq -r '.verdict' /tmp/claude-review-decision.json)
+          REASON=$(jq -r '.reason' /tmp/claude-review-decision.json)
+          SUMMARY=$(jq -r '.summary' /tmp/claude-review-decision.json)
+          RETRY_INCREMENT=$(jq -r '.retry_increment' /tmp/claude-review-decision.json)
+
+          if [ -z "$ISSUE_ID" ] || [ "$ISSUE_ID" = "null" ]; then
+            ISSUE_ID="$ISSUE_ID_FALLBACK"
+          fi
+
+          case "$VERDICT" in
+            todo|in_review) ;;
+            *)
+              echo "Invalid verdict in /tmp/claude-review-decision.json: $VERDICT" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ -z "$ISSUE_ID" ]; then
+            echo "No linked Linear issue ID found; skipping Linear update."
+            exit 0
+          fi
+
+          ISSUE_SEARCH_PAYLOAD=$(jq -n --arg issue "$ISSUE_ID" '{
+            query: "query($issue: String!) { issueSearch(filter: { identifier: { eq: $issue } }) { nodes { id identifier state { name } team { states { nodes { id name } } } } } }",
+            variables: { issue: $issue }
+          }')
+          ISSUE_SEARCH_JSON=$(curl -s -X POST https://api.linear.app/graphql \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$ISSUE_SEARCH_PAYLOAD")
+
+          ISSUE_UUID=$(printf '%s' "$ISSUE_SEARCH_JSON" | jq -r '.data.issueSearch.nodes[0].id // empty')
+          if [ -z "$ISSUE_UUID" ]; then
+            gh pr comment "$PR_NUMBER" --body "Claude review found an issue linked to \`$ISSUE_ID\`, but Linear lookup failed."
+            exit 1
+          fi
+
+          TARGET_STATE_NAME="In Review"
+          if [ "$VERDICT" = "todo" ]; then
+            TARGET_STATE_NAME="Todo"
+          fi
+
+          if [ "$VERDICT" = "todo" ] && [ "$CURRENT_RETRY_COUNT" = "2" ]; then
+            TARGET_STATE_NAME="In Review"
+            REASON="$REASON Human intervention required after 3 automated retries."
+          fi
+
+          TARGET_STATE_ID=$(printf '%s' "$ISSUE_SEARCH_JSON" | jq -r --arg name "$TARGET_STATE_NAME" '.data.issueSearch.nodes[0].team.states.nodes[] | select(.name == $name) | .id' | head -n 1)
+          if [ -z "$TARGET_STATE_ID" ]; then
+            gh pr comment "$PR_NUMBER" --body "Claude review found an issue linked to \`$ISSUE_ID\`, but could not find Linear state \`$TARGET_STATE_NAME\`."
+            exit 1
+          fi
+
+          UPDATE_PAYLOAD=$(jq -n --arg issue_id "$ISSUE_UUID" --arg state_id "$TARGET_STATE_ID" '{
+            query: "mutation($issue_id: String!, $state_id: String!) { issueUpdate(id: $issue_id, input: { stateId: $state_id }) { success } }",
+            variables: { issue_id: $issue_id, state_id: $state_id }
+          }')
+          UPDATE_JSON=$(curl -s -X POST https://api.linear.app/graphql \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$UPDATE_PAYLOAD")
+          printf '%s' "$UPDATE_JSON" | jq -e '.data.issueUpdate.success == true' >/dev/null
+
+          COMMENT_BODY=$(printf '## Claude Review Summary\n\n%s\n\nVerdict: `%s`\nReason: %s\nPR: %s' "$SUMMARY" "$VERDICT" "$REASON" "$PR_URL")
+          COMMENT_PAYLOAD=$(jq -n --arg issue_id "$ISSUE_UUID" --arg body "$COMMENT_BODY" '{
+            query: "mutation($issue_id: String!, $body: String!) { commentCreate(input: { issueId: $issue_id, body: $body }) { success } }",
+            variables: { issue_id: $issue_id, body: $body }
+          }')
+          curl -s -X POST https://api.linear.app/graphql \
+            -H "Authorization: $LINEAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$COMMENT_PAYLOAD" | jq -e '.data.commentCreate.success == true' >/dev/null
+
+          if [ "$VERDICT" = "todo" ] && [ "$TARGET_STATE_NAME" = "Todo" ] && [ "$RETRY_INCREMENT" = "true" ]; then
+            if [ -n "${CURRENT_RETRY_LABEL:-}" ]; then
+              gh api -X DELETE repos/${{ github.repository }}/issues/$PR_NUMBER/labels/$CURRENT_RETRY_LABEL || true
+            fi
+            NEXT_RETRY=$((CURRENT_RETRY_COUNT + 1))
+            gh api -X POST repos/${{ github.repository }}/issues/$PR_NUMBER/labels -f "labels[]=review-retry-$NEXT_RETRY"
+          fi
 
       - name: Set review status to success
         if: steps.context.outputs.skip != 'true' && steps.context.outputs.count != '3' && success()
