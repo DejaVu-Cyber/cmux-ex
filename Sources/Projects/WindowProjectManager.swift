@@ -48,7 +48,10 @@ final class WindowProjectManager: ObservableObject {
             throw WindowProjectManagerError.projectAlreadyOpen(project.id)
         }
 
-        let workspaceManager = TabManager(initialWorkingDirectory: project.repoPath)
+        let workspaceManager = TabManager(
+            initialWorkingDirectory: project.repoPath,
+            projectId: project.id
+        )
         let container = ProjectContainer(
             projectId: project.id,
             workspaces: workspaceManager.tabs,

@@ -349,11 +349,37 @@ struct SessionTabManagerSnapshot: Codable, Sendable {
     var workspaces: [SessionWorkspaceSnapshot]
 }
 
+struct SessionProjectContainerSnapshot: Codable, Sendable {
+    var projectId: UUID
+    var tabManager: SessionTabManagerSnapshot
+}
+
 struct SessionWindowSnapshot: Codable, Sendable {
     var frame: SessionRectSnapshot?
     var display: SessionDisplaySnapshot?
     var tabManager: SessionTabManagerSnapshot
     var sidebar: SessionSidebarSnapshot
+    var openProjectIds: [UUID]?
+    var activeProjectId: UUID?
+    var projectContainers: [SessionProjectContainerSnapshot]?
+
+    init(
+        frame: SessionRectSnapshot?,
+        display: SessionDisplaySnapshot?,
+        tabManager: SessionTabManagerSnapshot,
+        sidebar: SessionSidebarSnapshot,
+        openProjectIds: [UUID]? = nil,
+        activeProjectId: UUID? = nil,
+        projectContainers: [SessionProjectContainerSnapshot]? = nil
+    ) {
+        self.frame = frame
+        self.display = display
+        self.tabManager = tabManager
+        self.sidebar = sidebar
+        self.openProjectIds = openProjectIds
+        self.activeProjectId = activeProjectId
+        self.projectContainers = projectContainers
+    }
 }
 
 struct AppSessionSnapshot: Codable, Sendable {

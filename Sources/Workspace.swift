@@ -6487,6 +6487,7 @@ final class Workspace: Identifiable, ObservableObject {
     )
 
     let id: UUID
+    var parentProjectId: UUID
     @Published var title: String
     @Published var customTitle: String?
     @Published var customDescription: String?
@@ -6858,6 +6859,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     init(
         title: String = "Terminal",
+        parentProjectId: UUID = UUID(),
         workingDirectory: String? = nil,
         portOrdinal: Int = 0,
         configTemplate: CmuxSurfaceConfigTemplate? = nil,
@@ -6866,6 +6868,7 @@ final class Workspace: Identifiable, ObservableObject {
         initialTerminalEnvironment: [String: String] = [:]
     ) {
         self.id = UUID()
+        self.parentProjectId = parentProjectId
         self.portOrdinal = portOrdinal
         self.processTitle = title
         self.title = title

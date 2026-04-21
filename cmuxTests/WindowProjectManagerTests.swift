@@ -70,6 +70,32 @@ final class WindowProjectManagerTests: XCTestCase {
         XCTAssertEqual(manager.activeProjectId, second.id)
     }
 
+    func testOpenProjectSeedsExistingWorkspacesWithParentProjectId() throws {
+        let manager = makeManager()
+        let project = try makeProject(id: "12121212-1212-1212-1212-121212121212")
+
+        try manager.openProject(project, inserting: .atEnd)
+
+        let workspaces = manager.containers[project.id]?.workspaces ?? []
+        XCTAssertFalse(workspaces.isEmpty)
+        XCTAssertTrue(workspaces.allSatisfy { $0.parentProjectId == project.id })
+    }
+
+    func testNewWorkspacesCreatedThroughProjectWorkspaceManagerKeepParentProjectId() throws {
+        let manager = makeManager()
+        let project = try makeProject(id: "34343434-3434-3434-3434-343434343434")
+
+        try manager.openProject(project, inserting: .atEnd)
+        let workspaceManager = try XCTUnwrap(manager.containers[project.id]?.workspaceManager)
+
+        let newWorkspace = workspaceManager.addWorkspace(select: false)
+
+        XCTAssertEqual(newWorkspace.parentProjectId, project.id)
+        XCTAssertTrue(
+            workspaceManager.tabs.allSatisfy { $0.parentProjectId == project.id }
+        )
+    }
+
     func testOpenProjectDuplicateThrowsProjectAlreadyOpen() throws {
         let manager = makeManager()
         let project = try makeProject(id: "AAAAAAA0-AAAA-AAAA-AAAA-AAAAAAAAAAA0")

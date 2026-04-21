@@ -2824,6 +2824,9 @@ struct ContentView: View {
 
     @State private var titlebarLeadingInset: CGFloat = 12
     private var windowIdentifier: String { "cmux.main.\(windowId.uuidString)" }
+    private var activeWindowTabManager: TabManager {
+        AppDelegate.shared?.tabManagerFor(windowId: windowId) ?? tabManager
+    }
     private var fakeTitlebarTextColor: Color {
         _ = titlebarThemeGeneration
         let ghosttyBackground = GhosttyApp.shared.defaultBackgroundColor
@@ -2842,7 +2845,7 @@ struct ContentView: View {
                     anchorView: fullscreenControlsViewModel.notificationsAnchorView
                 )
             },
-            onNewTab: { tabManager.addTab() },
+            onNewTab: { activeWindowTabManager.addTab() },
             visibilityMode: .alwaysVisible
         )
     }
@@ -6140,10 +6143,11 @@ struct ContentView: View {
     }
 
     private func commandPaletteSwitcherWindowContexts() -> [CommandPaletteSwitcherWindowContext] {
+        let currentWindowTabManager = activeWindowTabManager
         let fallback = CommandPaletteSwitcherWindowContext(
             windowId: windowId,
-            tabManager: tabManager,
-            selectedWorkspaceId: tabManager.selectedTabId,
+            tabManager: currentWindowTabManager,
+            selectedWorkspaceId: currentWindowTabManager.selectedTabId,
             windowLabel: nil
         )
 

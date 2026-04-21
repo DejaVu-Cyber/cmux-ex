@@ -9,6 +9,8 @@ import Combine
 import ObjectiveC.runtime
 import Darwin
 
+private var cmuxMainWindowIdAssociationKey: UInt8 = 0
+
 func cmuxJavaScriptStringLiteral(_ value: String?) -> String? {
     guard let value else { return nil }
     // Serialize as a JSON array, then strip the outer brackets to get a quoted JS string literal.
@@ -2218,22 +2220,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Self.detectRunningUnderXCTest(env)
     }
 
+    @MainActor
     private final class MainWindowContext {
         let windowId: UUID
-        let tabManager: TabManager
+        let windowProjectManager: WindowProjectManager
         let sidebarState: SidebarState
         let sidebarSelectionState: SidebarSelectionState
+        private let bootstrapTabManager: TabManager
         weak var window: NSWindow?
+
+        var tabManager: TabManager {
+            windowProjectManager.activeContainer?.workspaceManager ?? bootstrapTabManager
+        }
+
+        var allTabManagers: [TabManager] {
+            var managers: [TabManager] = windowProjectManager.openProjectIds.compactMap {
+                windowProjectManager.containers[$0]?.workspaceManager
+            }
+            if managers.isEmpty {
+                managers = [bootstrapTabManager]
+            } else if !managers.contains(where: { $0 === bootstrapTabManager }) {
+                managers.append(bootstrapTabManager)
+            }
+            return managers
+        }
+
+        var selectedWorkspaceId: UUID? {
+            windowProjectManager.activeContainer?.selectedWorkspaceId ?? bootstrapTabManager.selectedTabId
+        }
 
         init(
             windowId: UUID,
+            windowProjectManager: WindowProjectManager,
             tabManager: TabManager,
             sidebarState: SidebarState,
             sidebarSelectionState: SidebarSelectionState,
             window: NSWindow?
         ) {
             self.windowId = windowId
-            self.tabManager = tabManager
+            self.windowProjectManager = windowProjectManager
+            self.bootstrapTabManager = tabManager
             self.sidebarState = sidebarState
             self.sidebarSelectionState = sidebarSelectionState
             self.window = window
@@ -4805,6 +4831,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NotificationCenter.default.post(name: .mainWindowContextsDidChange, object: self)
     }
 
+    private func defaultProjectRepoPath(for tabManager: TabManager) -> String {
+        let fallback = FileManager.default.homeDirectoryForCurrentUser.path
+        let rawPath = tabManager.selectedWorkspace?.currentDirectory
+            ?? tabManager.tabs.first?.currentDirectory
+            ?? fallback
+        return (try? RepoPath.canonical(rawPath))
+            ?? URL(fileURLWithPath: fallback).standardizedFileURL.path
+    }
+
+    private func makeDefaultProject(for tabManager: TabManager) -> Project {
+        let repoPath = defaultProjectRepoPath(for: tabManager)
+        let defaultProjectName = String(localized: "project.default.name", defaultValue: "Default Project")
+        let defaultProjectMonogram = String(localized: "project.default.monogram", defaultValue: "D")
+        do {
+            return try Project(
+                id: tabManager.projectId,
+                name: defaultProjectName,
+                monogram: defaultProjectMonogram,
+                color: .palette(.accent),
+                repoPath: repoPath,
+                bookmarkData: nil,
+                lastOpenedAt: Date()
+            )
+        } catch {
+            return try! Project(
+                id: tabManager.projectId,
+                name: defaultProjectName,
+                monogram: defaultProjectMonogram,
+                color: .palette(.accent),
+                repoPath: FileManager.default.homeDirectoryForCurrentUser.path,
+                bookmarkData: nil,
+                lastOpenedAt: Date()
+            )
+        }
+    }
+
+    private func makeDefaultWindowProjectManager(
+        owner: NSWindow,
+        tabManager: TabManager
+    ) -> WindowProjectManager {
+        let project = makeDefaultProject(for: tabManager)
+        let container = ProjectContainer(
+            projectId: project.id,
+            workspaces: tabManager.tabs,
+            workspaceManager: tabManager
+        )
+        return WindowProjectManager(
+            owner: owner,
+            openProjectIds: [project.id],
+            activeProjectId: project.id,
+            containers: [project.id: container]
+        )
+    }
+
+    private func bindWindow(_ window: NSWindow, to context: MainWindowContext) {
+        bindMainWindowIdentity(window, windowId: context.windowId)
+        for manager in context.allTabManagers {
+            manager.window = window
+        }
+    }
+
     /// Register a terminal window with the AppDelegate so menu commands and socket control
     /// can target whichever window is currently active.
     func registerMainWindow(
@@ -4814,25 +4901,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         sidebarState: SidebarState,
         sidebarSelectionState: SidebarSelectionState
     ) {
-        tabManager.window = window
-
+        bindMainWindowIdentity(window, windowId: windowId)
         let key = ObjectIdentifier(window)
         #if DEBUG
         let priorManagerToken = debugManagerToken(self.tabManager)
         #endif
-        if let existing = mainWindowContexts[key] {
+        if let existing = contextForRegisteredWindowIdentity(window) {
             existing.window = window
+            bindWindow(window, to: existing)
         } else if let existing = mainWindowContexts.values.first(where: { $0.windowId == windowId }) {
             existing.window = window
+            bindWindow(window, to: existing)
             reindexMainWindowContextIfNeeded(existing, for: window)
         } else {
+            let windowProjectManager = makeDefaultWindowProjectManager(
+                owner: window,
+                tabManager: tabManager
+            )
             mainWindowContexts[key] = MainWindowContext(
                 windowId: windowId,
+                windowProjectManager: windowProjectManager,
                 tabManager: tabManager,
                 sidebarState: sidebarState,
                 sidebarSelectionState: sidebarSelectionState,
                 window: window
             )
+            if let context = mainWindowContexts[key] {
+                bindWindow(window, to: context)
+            }
             NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
                 object: window,
@@ -4868,6 +4964,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let isVisible: Bool
         let workspaceCount: Int
         let selectedWorkspaceId: UUID?
+        let openProjectIds: [UUID]
+        let activeProjectId: UUID?
     }
 
     struct WindowMoveTarget: Identifiable {
@@ -4901,8 +4999,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 windowId: ctx.windowId,
                 isKeyWindow: window?.isKeyWindow ?? false,
                 isVisible: window?.isVisible ?? false,
-                workspaceCount: ctx.tabManager.tabs.count,
-                selectedWorkspaceId: ctx.tabManager.selectedTabId
+                workspaceCount: ctx.allTabManagers.reduce(0) { partial, manager in
+                    partial + manager.tabs.count
+                },
+                selectedWorkspaceId: ctx.selectedWorkspaceId,
+                openProjectIds: ctx.windowProjectManager.openProjectIds,
+                activeProjectId: ctx.windowProjectManager.activeProjectId
             )
         }
     }
@@ -5311,8 +5413,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         mainWindowContexts.values.first(where: { $0.windowId == windowId })?.tabManager
     }
 
+    func windowProjectManagerFor(windowId: UUID) -> WindowProjectManager? {
+        mainWindowContexts.values.first(where: { $0.windowId == windowId })?.windowProjectManager
+    }
+
+    func projectState(for tabManager: TabManager) -> (activeProjectId: UUID?, openProjectIds: [UUID])? {
+        guard let context = mainWindowContexts.values.first(where: { context in
+            context.allTabManagers.contains(where: { $0 === tabManager })
+        }) else {
+            return nil
+        }
+        return (
+            activeProjectId: context.windowProjectManager.activeProjectId,
+            openProjectIds: context.windowProjectManager.openProjectIds
+        )
+    }
+
     func windowId(for tabManager: TabManager) -> UUID? {
-        mainWindowContexts.values.first(where: { $0.tabManager === tabManager })?.windowId
+        mainWindowContexts.values.first(where: { context in
+            context.allTabManagers.contains(where: { $0 === tabManager })
+        })?.windowId
     }
 
     func mainWindow(for windowId: UUID) -> NSWindow? {
@@ -5320,7 +5440,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func mainWindowContainingWorkspace(_ workspaceId: UUID) -> NSWindow? {
-        for context in mainWindowContexts.values where context.tabManager.tabs.contains(where: { $0.id == workspaceId }) {
+        for context in mainWindowContexts.values where context.allTabManagers.contains(where: { manager in
+            manager.tabs.contains(where: { $0.id == workspaceId })
+        }) {
             if let window = context.window ?? windowForMainWindowId(context.windowId) {
                 return window
             }
@@ -5752,28 +5874,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
     }
 
+    @discardableResult
     func repairFocusedTerminalKeyboardRoutingIfNeeded(
         window: NSWindow,
         event: NSEvent
-    ) {
-        guard event.type == .keyDown else { return }
+    ) -> Bool {
+        guard event.type == .keyDown else { return false }
         let normalizedFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard isMainTerminalWindow(window) else { return }
-        guard window.attachedSheet == nil else { return }
-        guard !isCommandPaletteEffectivelyVisible(in: window) else { return }
+        guard isMainTerminalWindow(window) else { return false }
+        guard window.attachedSheet == nil else { return false }
+        guard !isCommandPaletteEffectivelyVisible(in: window) else { return false }
         // If the active first responder is a text-field editor (e.g. a popover's
         // search field whose field editor is borrowed from the parent window),
         // never re-route the keystroke to the terminal. Symmetric with
         // applyFirstResponderIfNeeded's NSText guard. Terminals use GhosttyNSView,
         // never NSText, so this can't suppress legitimate terminal repair.
         if window.firstResponder is NSText {
-            return
+            return false
         }
         guard let context = contextForMainWindow(window) ?? contextForMainTerminalWindow(window),
               let workspace = context.tabManager.selectedWorkspace,
               let panelId = workspace.focusedPanelId,
               let terminalPanel = workspace.terminalPanel(for: panelId) else {
-            return
+            return false
         }
         let firstResponder = window.firstResponder
         if normalizedFlags.contains(.command) {
@@ -5783,13 +5906,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 responderIsWindow: firstResponder is NSWindow,
                 responderHasViableKeyRoutingOwner: responderHasViableOwner
             )
-            guard commandEquivalentNeedsRepair else { return }
+            guard commandEquivalentNeedsRepair else { return false }
         } else {
             guard responderNeedsFocusedTerminalKeyRepair(
                 firstResponder,
                 in: window,
                 hostedView: terminalPanel.hostedView
-            ) else { return }
+            ) else { return false }
         }
 
 #if DEBUG
@@ -5814,9 +5937,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "focus.keyRepair result window=\(ObjectIdentifier(window)) " +
             "panel=\(String(panelId.uuidString.prefix(5))) " +
             "isSurfaceResponder=\(terminalPanel.hostedView.isSurfaceViewFirstResponder() ? 1 : 0) " +
-            "fr=\(after)"
+                "fr=\(after)"
         )
 #endif
+
+        guard !normalizedFlags.contains(.command),
+              let repairedResponder = window.firstResponder as? GhosttyNSView else {
+            return false
+        }
+
+#if DEBUG
+        dlog(
+            "focus.keyRepair directForward window=\(ObjectIdentifier(window)) " +
+            "panel=\(String(panelId.uuidString.prefix(5))) keyCode=\(event.keyCode)"
+        )
+#endif
+        repairedResponder.keyDown(with: event)
+        return true
     }
 
     func locateSurface(surfaceId: UUID) -> (windowId: UUID, workspaceId: UUID, tabManager: TabManager)? {
@@ -6072,8 +6209,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
            let window = ctx.window {
             return window
         }
+        if let window = NSApp.windows.first(where: { associatedMainWindowId(from: $0) == windowId }) {
+            return window
+        }
         let expectedIdentifier = "cmux.main.\(windowId.uuidString)"
         return NSApp.windows.first(where: { $0.identifier?.rawValue == expectedIdentifier })
+    }
+
+    private func associatedMainWindowId(from window: NSWindow) -> UUID? {
+        guard let raw = objc_getAssociatedObject(window, &cmuxMainWindowIdAssociationKey) as? String else {
+            return nil
+        }
+        return UUID(uuidString: raw)
+    }
+
+    private func bindMainWindowIdentity(_ window: NSWindow, windowId: UUID) {
+        objc_setAssociatedObject(
+            window,
+            &cmuxMainWindowIdAssociationKey,
+            windowId.uuidString,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+        let expectedIdentifier = "cmux.main.\(windowId.uuidString)"
+        if window.identifier?.rawValue != expectedIdentifier {
+            window.identifier = NSUserInterfaceItemIdentifier(expectedIdentifier)
+        }
+    }
+
+    private func contextForRegisteredWindowIdentity(_ window: NSWindow) -> MainWindowContext? {
+        let key = ObjectIdentifier(window)
+        if let context = mainWindowContexts[key] {
+            if context.window === window {
+                return context
+            }
+
+            if let windowId = mainWindowId(from: window),
+               context.windowId == windowId {
+                context.window = window
+                return context
+            }
+
+            // NSWindow identities can be reused after deallocation. If the cached
+            // key no longer matches the window's registered identifier, drop it so
+            // a new window cannot inherit an orphaned context.
+            mainWindowContexts.removeValue(forKey: key)
+            notifyMainWindowContextsDidChange()
+        }
+
+        guard let windowId = mainWindowId(from: window),
+              let context = mainWindowContexts.values.first(where: { $0.windowId == windowId }) else {
+            return nil
+        }
+        reindexMainWindowContextIfNeeded(context, for: window)
+        return context
     }
 
     private func resolvedWindow(for context: MainWindowContext) -> NSWindow? {
@@ -6088,6 +6276,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func mainWindowId(from window: NSWindow) -> UUID? {
+        if let windowId = associatedMainWindowId(from: window) {
+            return windowId
+        }
         guard let raw = window.identifier?.rawValue else { return nil }
         let prefix = "cmux.main."
         guard raw.hasPrefix(prefix) else { return nil }
@@ -6122,7 +6313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func contextForMainTerminalWindow(_ window: NSWindow, reindex: Bool = true) -> MainWindowContext? {
         guard isMainTerminalWindow(window) else { return nil }
 
-        if let context = mainWindowContexts[ObjectIdentifier(window)] {
+        if let context = contextForRegisteredWindowIdentity(window) {
             context.window = window
             return context
         }
@@ -6204,9 +6395,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    private func pruneOrphanedMainWindowContexts() {
+        var orphanedContexts: [MainWindowContext] = []
+        for context in mainWindowContexts.values {
+            guard resolvedWindow(for: context) == nil else { continue }
+            if orphanedContexts.contains(where: { $0 === context }) { continue }
+            orphanedContexts.append(context)
+        }
+        for context in orphanedContexts {
+            discardOrphanedMainWindowContext(context)
+        }
+    }
+
     private func mainWindowId(for window: NSWindow) -> UUID? {
-        if let context = mainWindowContexts[ObjectIdentifier(window)] {
+        if let context = contextForRegisteredWindowIdentity(window) {
             return context.windowId
+        }
+        if let windowId = associatedMainWindowId(from: window) {
+            return windowId
         }
         guard let rawIdentifier = window.identifier?.rawValue,
               rawIdentifier.hasPrefix("cmux.main.") else { return nil }
@@ -6310,7 +6516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func contextForMainWindow(_ window: NSWindow?) -> MainWindowContext? {
         guard let window, isMainTerminalWindow(window) else { return nil }
-        return mainWindowContexts[ObjectIdentifier(window)]
+        return contextForRegisteredWindowIdentity(window)
     }
 
 #if DEBUG
@@ -6380,7 +6586,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         let eventWindowNumber = event.windowNumber
         guard eventWindowNumber > 0 else { return nil }
-        return NSApp.window(withWindowNumber: eventWindowNumber)
+        if let window = NSApp.window(withWindowNumber: eventWindowNumber) {
+            return window
+        }
+        if let context = mainWindowContexts.values.first(where: { candidate in
+            let window = candidate.window ?? windowForMainWindowId(candidate.windowId)
+            return window?.windowNumber == eventWindowNumber
+        }) {
+            return context.window ?? windowForMainWindowId(context.windowId)
+        }
+        return nil
     }
 
     /// Re-sync app-level active window pointers from the currently focused main terminal window.
@@ -6806,7 +7021,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             workingDirectory: workingDirectory
         )
         #endif
+        pruneOrphanedMainWindowContexts()
         guard let context = preferredMainWindowContextForWorkspaceCreation(event: event, debugSource: debugSource) else {
+            pruneOrphanedMainWindowContexts()
             #if DEBUG
             logWorkspaceCreationRouting(
                 phase: "no_context",
@@ -6860,7 +7077,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func preferredMainWindowContextForWorkspaceCreation(
         event: NSEvent? = nil,
-        debugSource: String = "unspecified"
+        debugSource: String = "unspecified",
+        allowBackgroundWindowFallback: Bool = false
     ) -> MainWindowContext? {
         if let context = mainWindowContext(forShortcutEvent: event, debugSource: debugSource) {
             return context
@@ -6909,6 +7127,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return context
         }
 
+        if let orderedWindow = NSApp.orderedWindows.first(where: isMainTerminalWindow),
+           let context = contextForMainTerminalWindow(orderedWindow) {
+            #if DEBUG
+            logWorkspaceCreationRouting(
+                phase: "choose",
+                source: debugSource,
+                reason: "ordered_frontmost_window",
+                event: event,
+                chosenContext: context
+            )
+            #endif
+            return context
+        }
+
+        guard allowBackgroundWindowFallback else {
+#if DEBUG
+            logWorkspaceCreationRouting(
+                phase: "choose",
+                source: debugSource,
+                reason: "no_active_window_no_background_fallback",
+                event: event,
+                chosenContext: nil
+            )
+#endif
+            return nil
+        }
+
         for window in NSApp.orderedWindows where isMainTerminalWindow(window) {
             if let context = contextForMainTerminalWindow(window) {
                 #if DEBUG
@@ -6949,6 +7194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         debugSource: String = "unspecified"
     ) -> MainWindowContext? {
         guard let event else { return nil }
+        pruneOrphanedMainWindowContexts()
 
         if let eventWindow = event.window,
            let context = contextForMainTerminalWindow(eventWindow) {
@@ -7125,7 +7371,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // creates a window matching the previous one's dimensions.
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         let sourceContext = preferredMainWindowContextForWorkspaceCreation(
-            debugSource: "createMainWindow.initialGeometry"
+            debugSource: "createMainWindow.initialGeometry",
+            allowBackgroundWindowFallback: true
         )
         let sourceWindow = sourceContext.flatMap { resolvedWindow(for: $0) }
         let existingFrame = sourceWindow?.frame
@@ -7213,8 +7460,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             NSApp.activate(ignoringOtherApps: true)
         }
         if shouldTemporarilyDisallowFullScreenTiling {
-            DispatchQueue.main.async { [weak window] in
-                window?.collectionBehavior.remove(.fullScreenDisallowsTiling)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak window] in
+                guard let window else { return }
+                var behavior = window.collectionBehavior
+                behavior.remove(.fullScreenDisallowsTiling)
+                window.collectionBehavior = behavior
             }
         }
         if let restoredFrame {
@@ -12913,7 +13163,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         appendCandidate(tabManager)
         for context in mainWindowContexts.values {
-            appendCandidate(context.tabManager)
+            for manager in context.allTabManagers {
+                appendCandidate(manager)
+            }
         }
 
         for manager in candidateManagers {
@@ -12971,8 +13223,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Avoid stale notifications that can no longer be opened once the owning window is gone.
         if let store = notificationStore {
-            for tab in removed.tabManager.tabs {
-                store.clearNotifications(forTabId: tab.id)
+            for manager in removed.allTabManagers {
+                for tab in manager.tabs {
+                    store.clearNotifications(forTabId: tab.id)
+                }
             }
         }
 
@@ -13013,7 +13267,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func isMainTerminalWindow(_ window: NSWindow) -> Bool {
-        if mainWindowContexts[ObjectIdentifier(window)] != nil {
+        if contextForRegisteredWindowIdentity(window) != nil {
+            return true
+        }
+        if associatedMainWindowId(from: window) != nil {
             return true
         }
         guard let raw = window.identifier?.rawValue else { return false }
@@ -13022,7 +13279,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func contextContainingTabId(_ tabId: UUID) -> MainWindowContext? {
         for context in mainWindowContexts.values {
-            if context.tabManager.tabs.contains(where: { $0.id == tabId }) {
+            if context.allTabManagers.contains(where: { manager in
+                manager.tabs.contains(where: { $0.id == tabId })
+            }) {
                 return context
             }
         }
@@ -13031,11 +13290,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Returns the `TabManager` that owns `tabId`, if any.
     func tabManagerFor(tabId: UUID) -> TabManager? {
-        contextContainingTabId(tabId)?.tabManager
+        for context in mainWindowContexts.values {
+            for manager in context.allTabManagers where manager.tabs.contains(where: { $0.id == tabId }) {
+                return manager
+            }
+        }
+        return nil
     }
 
     private func workspaceForMainActor(tabId: UUID) -> Workspace? {
-        contextContainingTabId(tabId)?.tabManager.tabs.first(where: { $0.id == tabId })
+        tabManagerFor(tabId: tabId)?.tabs.first(where: { $0.id == tabId })
     }
 
     /// Returns the `Workspace` that owns `tabId`, if any.
@@ -14258,11 +14522,13 @@ private extension NSWindow {
         }
         let focusRepairStart = event.type == .keyDown ? ProcessInfo.processInfo.systemUptime : 0
 #endif
-        if event.type == .keyDown {
+        let keyRepairHandledEvent: Bool = if event.type == .keyDown {
             AppDelegate.shared?.repairFocusedTerminalKeyboardRoutingIfNeeded(
                 window: self,
                 event: event
-            )
+            ) ?? false
+        } else {
+            false
         }
 #if DEBUG
         if event.type == .keyDown {
@@ -14274,6 +14540,10 @@ private extension NSWindow {
             cmuxFirstResponderGuardCurrentEventContext = previousContextEvent
             cmuxFirstResponderGuardHitViewContext = previousContextHitView
             cmuxFirstResponderGuardContextWindowNumber = previousContextWindowNumber
+        }
+
+        if keyRepairHandledEvent {
+            return
         }
 
         guard shouldSuppressWindowMoveForFolderDrag(window: self, event: event),

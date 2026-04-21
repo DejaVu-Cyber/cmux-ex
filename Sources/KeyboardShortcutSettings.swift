@@ -1036,6 +1036,7 @@ struct ShortcutStroke: Equatable {
         guard flags == self.modifierFlags else { return false }
 
         let shortcutKey = key.lowercased()
+        let expectedKeyCode = Self.keyCodeForShortcutKey(shortcutKey)
         if shortcutKey == "\r" {
             return keyCode == 36 || keyCode == 76
         }
@@ -1046,6 +1047,13 @@ struct ShortcutStroke: Equatable {
             applyShiftSymbolNormalization: flags.contains(.shift),
             eventKeyCode: keyCode
         ) {
+            if flags.contains(.command),
+               !flags.contains(.control),
+               Self.shouldRequirePhysicalKeyMatchForCommandSymbolShortcut(shortcutKey: shortcutKey),
+               let expectedKeyCode,
+               keyCode != expectedKeyCode {
+                return false
+            }
             return true
         }
 
@@ -1085,7 +1093,7 @@ struct ShortcutStroke: Equatable {
                         || (!hasEventChars && (layoutCharacter?.isEmpty ?? true))
                 ))
         if allowANSIKeyCodeFallback,
-           let expectedKeyCode = Self.keyCodeForShortcutKey(shortcutKey) {
+           let expectedKeyCode {
             return keyCode == expectedKeyCode
         }
 
@@ -1176,6 +1184,13 @@ struct ShortcutStroke: Equatable {
             return false
         }
         return CharacterSet.letters.contains(scalar)
+    }
+
+    private static func shouldRequirePhysicalKeyMatchForCommandSymbolShortcut(shortcutKey: String) -> Bool {
+        guard shortcutKey.count == 1, let scalar = shortcutKey.unicodeScalars.first else {
+            return false
+        }
+        return !CharacterSet.letters.contains(scalar) && !CharacterSet.decimalDigits.contains(scalar)
     }
 
     private static func shortcutCharacterMatches(

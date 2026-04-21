@@ -2665,6 +2665,9 @@ class TerminalController {
         var focused: [String: Any] = [:]
         v2MainSync {
             let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let projectState = AppDelegate.shared?.projectState(for: tabManager)
+            let openProjectIds = projectState?.openProjectIds ?? [tabManager.projectId]
+            let activeProjectId = projectState?.activeProjectId ?? openProjectIds.first
             if let wsId = tabManager.selectedTabId,
                let ws = tabManager.tabs.first(where: { $0.id == wsId }) {
                 let paneUUID = ws.bonsplitController.focusedPaneId?.id
@@ -2672,6 +2675,8 @@ class TerminalController {
                 focused = [
                     "window_id": v2OrNull(windowId?.uuidString),
                     "window_ref": v2Ref(kind: .window, uuid: windowId),
+                    "active_project_id": v2OrNull(activeProjectId?.uuidString),
+                    "open_project_ids": openProjectIds.map(\.uuidString),
                     "workspace_id": wsId.uuidString,
                     "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
                     "pane_id": v2OrNull(paneUUID?.uuidString),
@@ -2686,7 +2691,9 @@ class TerminalController {
             } else {
                 focused = [
                     "window_id": v2OrNull(windowId?.uuidString),
-                    "window_ref": v2Ref(kind: .window, uuid: windowId)
+                    "window_ref": v2Ref(kind: .window, uuid: windowId),
+                    "active_project_id": v2OrNull(activeProjectId?.uuidString),
+                    "open_project_ids": openProjectIds.map(\.uuidString)
                 ]
             }
         }

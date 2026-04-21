@@ -1030,7 +1030,10 @@ class TabManager: ObservableObject {
     private var uiTestCancellables = Set<AnyCancellable>()
 #endif
 
-    init(initialWorkingDirectory: String? = nil) {
+    private(set) var projectId: UUID
+
+    init(initialWorkingDirectory: String? = nil, projectId: UUID = UUID()) {
+        self.projectId = projectId
         addWorkspace(workingDirectory: initialWorkingDirectory)
         observers.append(NotificationCenter.default.addObserver(
             forName: .ghosttyDidSetTitle,
@@ -1896,6 +1899,7 @@ class TabManager: ObservableObject {
     ) -> Workspace {
         Workspace(
             title: title,
+            parentProjectId: projectId,
             workingDirectory: workingDirectory,
             portOrdinal: portOrdinal,
             configTemplate: configTemplate,
@@ -3801,6 +3805,7 @@ class TabManager: ObservableObject {
     }
 
     func closeWorkspace(_ workspace: Workspace) {
+        guard let index = tabs.firstIndex(where: { $0.id == workspace.id }) else { return }
         guard tabs.count > 1 else { return }
         sentryBreadcrumb("workspace.close", data: ["tabCount": tabs.count - 1])
         clearWorkspaceGitProbes(workspaceId: workspace.id)
@@ -3813,16 +3818,14 @@ class TabManager: ObservableObject {
         unwireClosedBrowserTracking(for: workspace)
         workspace.owningTabManager = nil
 
-        if let index = tabs.firstIndex(where: { $0.id == workspace.id }) {
-            tabs.remove(at: index)
+        tabs.remove(at: index)
 
-            if selectedTabId == workspace.id {
-                // Keep the "focused index" stable when possible:
-                // - If we closed workspace i and there is still a workspace at index i, focus it (the one that moved up).
-                // - Otherwise (we closed the last workspace), focus the new last workspace (i-1).
-                let newIndex = min(index, max(0, tabs.count - 1))
-                selectedTabId = tabs[newIndex].id
-            }
+        if selectedTabId == workspace.id {
+            // Keep the "focused index" stable when possible:
+            // - If we closed workspace i and there is still a workspace at index i, focus it (the one that moved up).
+            // - Otherwise (we closed the last workspace), focus the new last workspace (i-1).
+            let newIndex = min(index, max(0, tabs.count - 1))
+            selectedTabId = tabs[newIndex].id
         }
     }
 
@@ -3855,6 +3858,7 @@ class TabManager: ObservableObject {
 
     /// Attach an existing workspace to this window.
     func attachWorkspace(_ workspace: Workspace, at index: Int? = nil, select: Bool = true) {
+        workspace.parentProjectId = projectId
         workspace.owningTabManager = self
         wireClosedBrowserTracking(for: workspace)
         let insertIndex: Int = {
@@ -6849,6 +6853,7 @@ extension TabManager {
             Self.nextPortOrdinal += 1
             let workspace = Workspace(
                 title: workspaceSnapshot.processTitle,
+                parentProjectId: projectId,
                 workingDirectory: workspaceSnapshot.currentDirectory,
                 portOrdinal: ordinal
             )
@@ -6861,7 +6866,7 @@ extension TabManager {
         if newTabs.isEmpty {
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
-            let fallback = Workspace(title: "Terminal 1", portOrdinal: ordinal)
+            let fallback = Workspace(title: "Terminal 1", parentProjectId: projectId, portOrdinal: ordinal)
             fallback.owningTabManager = self
             wireClosedBrowserTracking(for: fallback)
             newTabs.append(fallback)

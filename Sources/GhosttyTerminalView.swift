@@ -1619,6 +1619,10 @@ class GhosttyApp {
         initializeGhostty()
     }
 
+    private static let hostLayerBackgroundConfigLine = "macos-background-from-layer = true"
+    private static let hostLayerBackgroundConfigDisableLine = "macos-background-from-layer = false"
+    private static var cachedSupportsHostLayerBackgroundOption: Bool?
+
     #if DEBUG
     private static let initLogPath = "/tmp/cmux-ghostty-init.log"
 
@@ -1648,6 +1652,49 @@ class GhosttyApp {
         }
     }
     #endif
+
+    private static func supportsHostLayerBackgroundOption() -> Bool {
+        if let cachedSupportsHostLayerBackgroundOption {
+            return cachedSupportsHostLayerBackgroundOption
+        }
+
+        guard let config = ghostty_config_new() else {
+            cachedSupportsHostLayerBackgroundOption = false
+            return false
+        }
+        defer { ghostty_config_free(config) }
+
+        let tmpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-layer-bg-support-\(UUID().uuidString).conf")
+        do {
+            try hostLayerBackgroundConfigLine.write(to: tmpURL, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: tmpURL) }
+            tmpURL.path.withCString { path in
+                ghostty_config_load_file(config, path)
+            }
+        } catch {
+#if DEBUG
+            initLog("hostLayerBackgroundSupportProbe write failed error=\(error.localizedDescription)")
+#endif
+            cachedSupportsHostLayerBackgroundOption = false
+            return false
+        }
+
+        let count = Int(ghostty_config_diagnostics_count(config))
+        let isSupported = !(0..<count).contains { index in
+            let diag = ghostty_config_get_diagnostic(config, UInt32(index))
+            let message = diag.message.flatMap { String(cString: $0) } ?? ""
+            return message.contains("macos-background-from-layer") && message.contains("unknown field")
+        }
+
+#if DEBUG
+        if !isSupported {
+            initLog("hostLayerBackgroundSupportProbe unsupported")
+        }
+#endif
+        cachedSupportsHostLayerBackgroundOption = isSupported
+        return isSupported
+    }
 
     private func initializeGhostty() {
         // Ensure TUI apps can use colors even if NO_COLOR is set in the launcher env.
@@ -1786,19 +1833,23 @@ class GhosttyApp {
                 return
             }
 
-            loadInlineGhosttyConfig(
-                "macos-background-from-layer = true",
-                into: fallbackConfig,
-                prefix: "cmux-layer-bg",
-                logLabel: "layer background (fallback)"
-            )
+            if Self.supportsHostLayerBackgroundOption() {
+                loadInlineGhosttyConfig(
+                    Self.hostLayerBackgroundConfigLine,
+                    into: fallbackConfig,
+                    prefix: "cmux-layer-bg",
+                    logLabel: "layer background (fallback)"
+                )
+                usesHostLayerBackground = true
+            } else {
+                usesHostLayerBackground = false
+            }
             loadInlineGhosttyConfig(
                 "shell-integration = none",
                 into: fallbackConfig,
                 prefix: "cmux-shell-integration-override",
                 logLabel: "shell integration override (fallback)"
             )
-            usesHostLayerBackground = true
             ghostty_config_finalize(fallbackConfig)
             updateDefaultBackground(from: fallbackConfig, source: "initialize.fallbackConfig")
 
@@ -1888,17 +1939,20 @@ class GhosttyApp {
         loadCmuxAppSupportGhosttyConfigIfNeeded(config)
         loadCJKFontFallbackIfNeeded(config)
         let useHostLayerBackground = !hasConfiguredBackgroundImage(config)
-        usesHostLayerBackground = useHostLayerBackground
+        let supportsHostLayerBackground = Self.supportsHostLayerBackgroundOption()
+        usesHostLayerBackground = useHostLayerBackground && supportsHostLayerBackground
         if !useHostLayerBackground {
             // Background images need Ghostty's fullscreen background pass. Force
             // the layer-backed solid-color shortcut back off even if the user
             // config enabled it manually.
-            loadInlineGhosttyConfig(
-                "macos-background-from-layer = false",
-                into: config,
-                prefix: "cmux-layer-bg-image-override",
-                logLabel: "layer background image override"
-            )
+            if supportsHostLayerBackground {
+                loadInlineGhosttyConfig(
+                    Self.hostLayerBackgroundConfigDisableLine,
+                    into: config,
+                    prefix: "cmux-layer-bg-image-override",
+                    logLabel: "layer background image override"
+                )
+            }
         } else {
             // cmux provides the terminal background via backgroundView (CALayer)
             // instead of the GPU full-screen bg pass, so the layer can provide
@@ -1907,12 +1961,14 @@ class GhosttyApp {
             // Keep Ghostty's native background rendering when a background image
             // is configured: the separate CALayer background only matches the
             // solid-color path, not Ghostty's combined image compositing.
-            loadInlineGhosttyConfig(
-                "macos-background-from-layer = true",
-                into: config,
-                prefix: "cmux-layer-bg",
-                logLabel: "layer background"
-            )
+            if supportsHostLayerBackground {
+                loadInlineGhosttyConfig(
+                    Self.hostLayerBackgroundConfigLine,
+                    into: config,
+                    prefix: "cmux-layer-bg",
+                    logLabel: "layer background"
+                )
+            }
         }
         // Save the user's preference before we force it to none.
         userGhosttyShellIntegrationMode = "detect"
