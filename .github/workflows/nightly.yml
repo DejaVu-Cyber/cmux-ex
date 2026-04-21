@@ -98,7 +98,7 @@ jobs:
   build-sign-notarize-nightly:
     needs: decide
     if: needs.decide.outputs.should_build == 'true'
-    runs-on: warp-macos-26-arm64-6x
+    runs-on: [self-hosted, macOS, ARM64, cmux-macos-26-arm64]
     timeout-minutes: 20
     steps:
       - name: Checkout build ref

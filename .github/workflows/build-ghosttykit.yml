@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   build-ghosttykit:
-    runs-on: warp-macos-15-arm64-6x
+    runs-on: [self-hosted, macOS, ARM64, cmux-macos-26-arm64]
     timeout-minutes: 20
     steps:
       - name: Checkout

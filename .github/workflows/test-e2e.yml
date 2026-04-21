@@ -19,18 +19,10 @@ on:
         required: false
         default: true
         type: boolean
-      runner:
-        description: "Runner OS (Depot runners for GUI activation support)"
-        required: false
-        default: "depot-macos-latest"
-        type: choice
-        options:
-          - depot-macos-latest
-          - depot-macos-14
 
 jobs:
   e2e:
-    runs-on: ${{ inputs.runner || 'depot-macos-latest' }}
+    runs-on: [self-hosted, macOS, ARM64, cmux-macos-26-arm64]
     timeout-minutes: 20
     env:
       TEST_REF: ${{ inputs.ref || github.ref }}
@@ -173,8 +165,8 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: .ci-source-packages
-          key: spm-${{ inputs.runner || 'depot-macos-latest' }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-          restore-keys: spm-${{ inputs.runner || 'depot-macos-latest' }}-
+          key: spm-cmux-macos-26-arm64-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-cmux-macos-26-arm64-
 
       - name: Resolve Swift packages
         run: |

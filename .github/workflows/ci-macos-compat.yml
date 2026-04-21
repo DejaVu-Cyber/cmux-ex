@@ -1,4 +1,4 @@
-name: macOS Compatibility
+name: macOS 26 Compatibility
 
 on:
   workflow_dispatch:
@@ -9,12 +9,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: warp-macos-15-arm64-6x
-            timeout: 30
-            startup_smoke: true
-            virtual_display: true
-            skip_zig: false
-          - os: warp-macos-26-arm64-6x
+          - os: [self-hosted, macOS, ARM64, cmux-macos-26-arm64]
             timeout: 30
             startup_smoke: true
             virtual_display: false

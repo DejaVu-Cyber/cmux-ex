@@ -72,7 +72,7 @@ jobs:
         run: bun tsc --noEmit
 
   tests:
-    runs-on: warp-macos-15-arm64-6x
+    runs-on: [self-hosted, macOS, ARM64, cmux-macos-26-arm64]
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -243,7 +243,7 @@ jobs:
     # Keep lag validation separate from UI regressions so functional UI failures
     # and performance regressions stay isolated. Broader interactive UI suites
     # still run via test-e2e.yml on GitHub-hosted runners.
-    runs-on: warp-macos-15-arm64-6x
+    runs-on: [self-hosted, macOS, ARM64, cmux-macos-26-arm64]
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -412,7 +412,7 @@ jobs:
           rm -f /tmp/create-virtual-display
 
   ui-regressions:
-    runs-on: warp-macos-15-arm64-6x
+    runs-on: [self-hosted, macOS, ARM64, cmux-macos-26-arm64]
     timeout-minutes: 25
     steps:
       - name: Checkout
