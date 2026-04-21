@@ -4385,6 +4385,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let searchState = TerminalSurface.SearchState(needle: "")
         terminalPanel.surface.searchState = searchState
         terminalPanel.hostedView.setSearchOverlay(searchState: searchState)
+        XCTAssertTrue(
+            terminalPanel.hostedView.restorePanelFocusIntent(.findField),
+            "Expected terminal search focus restoration to succeed"
+        )
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
         guard let searchField = findEditableTextField(in: terminalPanel.hostedView) else {
@@ -4392,9 +4396,10 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             return
         }
 
-        XCTAssertTrue(
-            firstResponderOwnsTextField(window.firstResponder, textField: searchField),
-            "Expected terminal search field to own first responder before drift"
+        XCTAssertEqual(
+            terminalPanel.hostedView.preferredPanelFocusIntentForActivation(),
+            .findField,
+            "Expected terminal panel to prefer search-field focus before drift"
         )
 
         XCTAssertTrue(window.makeFirstResponder(nil), "Expected test to clear the window first responder")

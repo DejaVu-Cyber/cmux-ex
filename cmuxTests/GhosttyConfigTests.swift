@@ -1167,7 +1167,11 @@ final class BrowserPanelPopupContextTests: XCTestCase {
 @MainActor
 final class BrowserPanelRemoteStoreTests: XCTestCase {
     func testRemoteWorkspacePanelsShareWorkspaceScopedWebsiteDataStore() {
-        let localPanel = BrowserPanel(workspaceId: UUID(), isRemoteWorkspace: false)
+        let localPanel = BrowserPanel(
+            workspaceId: UUID(),
+            profileID: BrowserProfileStore.shared.builtInDefaultProfileID,
+            isRemoteWorkspace: false
+        )
         let remoteWorkspaceId = UUID()
         let firstRemotePanel = BrowserPanel(
             workspaceId: remoteWorkspaceId,

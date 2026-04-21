@@ -1737,6 +1737,7 @@ final class BrowserPanel: Panel, ObservableObject {
         "::1",
         "0.0.0.0",
     ]
+    private static var remoteWorkspaceDataStores: [UUID: WKWebsiteDataStore] = [:]
 
     /// Shared process pool for cookie sharing across all browser panels
     private static let sharedProcessPool = WKProcessPool()
@@ -2649,7 +2650,7 @@ final class BrowserPanel: Panel, ObservableObject {
         self.usesRemoteWorkspaceProxy = isRemoteWorkspace
         self.browserThemeMode = BrowserThemeSettings.mode()
         self.websiteDataStore = isRemoteWorkspace
-            ? WKWebsiteDataStore(forIdentifier: remoteWebsiteDataStoreIdentifier ?? workspaceId)
+            ? Self.remoteWorkspaceWebsiteDataStore(for: remoteWebsiteDataStoreIdentifier ?? workspaceId)
             : BrowserProfileStore.shared.websiteDataStore(for: resolvedProfileID)
 
         let webView = Self.makeWebView(
@@ -2832,7 +2833,7 @@ final class BrowserPanel: Panel, ObservableObject {
         workspaceId = newWorkspaceId
         usesRemoteWorkspaceProxy = isRemoteWorkspace
         let targetStore = isRemoteWorkspace
-            ? WKWebsiteDataStore(forIdentifier: remoteWebsiteDataStoreIdentifier ?? newWorkspaceId)
+            ? Self.remoteWorkspaceWebsiteDataStore(for: remoteWebsiteDataStoreIdentifier ?? newWorkspaceId)
             : BrowserProfileStore.shared.websiteDataStore(for: profileID)
         let needsStoreSwap = webView.configuration.websiteDataStore !== targetStore
         websiteDataStore = targetStore
@@ -4339,6 +4340,26 @@ extension BrowserPanel {
         preferredDeveloperToolsVisible = next
     }
 
+    private static func remoteWorkspaceWebsiteDataStore(for workspaceID: UUID) -> WKWebsiteDataStore {
+        if let existing = remoteWorkspaceDataStores[workspaceID] {
+            return existing
+        }
+        let store = WKWebsiteDataStore(forIdentifier: workspaceID)
+        remoteWorkspaceDataStores[workspaceID] = store
+        return store
+    }
+
+    private func consumeDeveloperToolsTransitionForImmediateRestoreIfNeeded(inspector: NSObject) {
+        guard isDeveloperToolsTransitionInFlight else { return }
+        let visible = inspector.cmuxCallBool(selector: NSSelectorFromString("isVisible")) ?? false
+        guard !visible else { return }
+
+        developerToolsTransitionSettleWorkItem?.cancel()
+        developerToolsTransitionSettleWorkItem = nil
+        developerToolsTransitionTargetVisible = nil
+        pendingDeveloperToolsTransitionTargetVisible = nil
+    }
+
     private func syncDeveloperToolsPresentationPreferenceFromUI() {
         if !detachedDeveloperToolsWindows().isEmpty {
             setPreferredDeveloperToolsPresentation(.detached)
@@ -4736,11 +4757,12 @@ extension BrowserPanel {
             forceDeveloperToolsRefreshOnNextAttach = false
             return
         }
-        guard !isDeveloperToolsTransitionInFlight else { return }
         guard let inspector = webView.cmuxInspectorObject() else {
             scheduleDeveloperToolsRestoreRetry()
             return
         }
+        consumeDeveloperToolsTransitionForImmediateRestoreIfNeeded(inspector: inspector)
+        guard !isDeveloperToolsTransitionInFlight else { return }
 
         let shouldForceRefresh = forceDeveloperToolsRefreshOnNextAttach
         forceDeveloperToolsRefreshOnNextAttach = false
