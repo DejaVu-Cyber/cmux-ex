@@ -277,23 +277,25 @@ def seed_history(client: cmux, lines: int) -> None:
         client.send_line(f"echo cmux-lag-seed-{i}")
 
 
-def run_shortcut_latency_burst(
+def run_surface_key_latency_burst(
     socket_path: str,
-    combo: str,
+    surface_id: str,
+    key_name: str,
     count: int,
     delay_s: float,
 ) -> list[float]:
     latencies_ms: list[float] = []
     with RawSocketClient(socket_path) as raw:
-        # Warm up the command path and responder chain.
+        # Warm up the direct surface-key path first so the sampled burst doesn't
+        # include one-time command dispatch overhead.
         for _ in range(5):
-            response = raw.command(f"simulate_shortcut {combo}")
+            response = raw.command(f"send_key_surface {surface_id} {key_name}")
             if not response.startswith("OK"):
                 raise cmuxError(response)
 
         for _ in range(count):
             start = time.perf_counter()
-            response = raw.command(f"simulate_shortcut {combo}")
+            response = raw.command(f"send_key_surface {surface_id} {key_name}")
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             if not response.startswith("OK"):
                 raise cmuxError(response)
@@ -328,9 +330,10 @@ def run_baseline_scenario(client: cmux, socket_path: str) -> tuple[str, LatencyS
     client.select_workspace(first_workspace_id)
     panel_id = focused_terminal_panel(client)
     seed_history(client, HISTORY_SEED_LINES)
-    latencies = run_shortcut_latency_burst(
+    latencies = run_surface_key_latency_burst(
         socket_path=socket_path,
-        combo=KEY_COMBO,
+        surface_id=panel_id,
+        key_name=KEY_COMBO,
         count=KEY_EVENTS,
         delay_s=KEY_DELAY_S,
     )
@@ -349,9 +352,10 @@ def run_churn_scenario(client: cmux, socket_path: str, first_workspace_id: str) 
 
     panel_id = focused_terminal_panel(client)
     seed_history(client, HISTORY_SEED_LINES)
-    latencies = run_shortcut_latency_burst(
+    latencies = run_surface_key_latency_burst(
         socket_path=socket_path,
-        combo=KEY_COMBO,
+        surface_id=panel_id,
+        key_name=KEY_COMBO,
         count=KEY_EVENTS,
         delay_s=KEY_DELAY_S,
     )
