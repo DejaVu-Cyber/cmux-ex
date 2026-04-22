@@ -3015,6 +3015,11 @@ struct ContentView: View {
     }
 
     private func syncFileExplorerDirectory() {
+        if ProcessInfo.processInfo.environment["CMUX_DISABLE_FILE_EXPLORER_SYNC"] == "1" {
+            sessionIndexStore.currentDirectory = nil
+            return
+        }
+
         guard let selectedId = tabManager.selectedTabId,
               let tab = tabManager.tabs.first(where: { $0.id == selectedId }) else {
             // No selection means we have no local cwd to scope by; clear so the
