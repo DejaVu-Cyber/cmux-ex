@@ -11584,6 +11584,10 @@ class TerminalController {
         // Stamp at socket-handler arrival so event.timestamp includes any wait
         // before the main-thread event dispatch.
         let requestTimestamp = ProcessInfo.processInfo.systemUptime
+        let routesThroughAppShortcutLayer =
+            parsed.modifierFlags.contains(.command) ||
+            parsed.modifierFlags.contains(.control) ||
+            parsed.modifierFlags.contains(.option)
 
         var result = "ERROR: Failed to create event"
         DispatchQueue.main.sync {
@@ -11629,16 +11633,32 @@ class TerminalController {
                 isARepeat: false,
                 keyCode: parsed.keyCode
             )
-            // Socket-driven shortcut simulation should reuse the exact same matching logic as the
-            // app-level shortcut monitor (so tests are hermetic), while still falling back to the
-            // normal responder chain for plain typing.
-            if let delegate = AppDelegate.shared, delegate.debugHandleCustomShortcut(event: keyDownEvent) {
-                result = "OK"
-                return
-            }
-            NSApp.sendEvent(keyDownEvent)
-            if let keyUpEvent {
-                NSApp.sendEvent(keyUpEvent)
+
+            if routesThroughAppShortcutLayer {
+                // Command/control/option combinations are app-owned shortcuts, so keep
+                // using the app-level routing path to exercise the real monitor/menu logic.
+                if let delegate = AppDelegate.shared, delegate.debugHandleCustomShortcut(event: keyDownEvent) {
+                    result = "OK"
+                    return
+                }
+                NSApp.sendEvent(keyDownEvent)
+                if let keyUpEvent {
+                    NSApp.sendEvent(keyUpEvent)
+                }
+            } else if let targetWindow {
+                // Plain navigation/editing keys should go straight to the target window's
+                // responder chain. Routing them through the app-level shortcut sync path
+                // adds unrelated window-context bookkeeping that distorts typing-latency
+                // measurements after workspace churn.
+                targetWindow.sendEvent(keyDownEvent)
+                if let keyUpEvent {
+                    targetWindow.sendEvent(keyUpEvent)
+                }
+            } else {
+                NSApp.sendEvent(keyDownEvent)
+                if let keyUpEvent {
+                    NSApp.sendEvent(keyUpEvent)
+                }
             }
             result = "OK"
         }
