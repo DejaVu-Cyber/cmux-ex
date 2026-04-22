@@ -10,6 +10,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <unistd.h>
 #import <objc/runtime.h>
+#import <time.h>
 
 // Private CoreGraphics classes (declared here since they're not in public headers)
 @interface CGVirtualDisplayMode : NSObject
@@ -169,6 +170,11 @@ int main(int argc, const char *argv[]) {
         NSString *startDelayArgument = argumentValue(arguments, @"--start-delay-ms");
         NSInteger startDelayMs = startDelayArgument.length > 0 ? startDelayArgument.integerValue : 0;
 
+        uint32_t entropy = (uint32_t)getpid() ^ (uint32_t)time(NULL) ^ arc4random_uniform(UINT32_MAX);
+        unsigned int vendorID = 0x1234;
+        unsigned int productID = 0x5678 ^ (entropy & 0x0FFF);
+        unsigned int serialNum = entropy | 1U;
+
         unsigned int width = 0;
         unsigned int height = 0;
         for (NSDictionary<NSString *, NSNumber *> *spec in modeSpecs) {
@@ -200,15 +206,16 @@ int main(int argc, const char *argv[]) {
         descriptor.maxPixelsWide = width;
         descriptor.maxPixelsHigh = height;
         descriptor.sizeInMillimeters = CGSizeMake(530, 300);
-        descriptor.vendorID = 0x1234;
-        descriptor.productID = 0x5678;
-        descriptor.serialNum = 0x0001;
+        descriptor.vendorID = vendorID;
+        descriptor.productID = productID;
+        descriptor.serialNum = serialNum;
         descriptor.queue = dispatch_get_main_queue();
 
         // Create virtual display
         CGVirtualDisplay *display = [[CGVirtualDisplay alloc] initWithDescriptor:descriptor];
         if (!display) {
-            fprintf(stderr, "ERROR: Failed to create CGVirtualDisplay\n");
+            fprintf(stderr, "ERROR: Failed to create CGVirtualDisplay (vendor=%u product=%u serial=%u)\n",
+                    vendorID, productID, serialNum);
             return 1;
         }
 

@@ -506,6 +506,8 @@ jobs:
         run: |
           set -euo pipefail
           HELPER_PATH="/tmp/create-virtual-display"
+          pkill -f "$HELPER_PATH" >/dev/null 2>&1 || true
+          sleep 1
           clang -framework Foundation -framework CoreGraphics \
             -o "$HELPER_PATH" scripts/create-virtual-display.m
 
@@ -537,6 +539,8 @@ jobs:
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           HELPER_PATH="/tmp/create-virtual-display"
+          pkill -f "$HELPER_PATH" >/dev/null 2>&1 || true
+          sleep 1
           TOKEN="$(uuidgen)"
           DIAG_PATH="/tmp/cmux-ui-test-display-churn-${TOKEN}.json"
           DISPLAY_READY="/tmp/cmux-ui-test-display-${TOKEN}.ready"
