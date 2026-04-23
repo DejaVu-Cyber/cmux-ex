@@ -11792,7 +11792,11 @@ class TerminalController {
         }
 
         DispatchQueue.main.sync {
-            _ = NSPasteboard(name: .drag).declareTypes(types, owner: nil)
+            let pasteboard = NSPasteboard(name: .drag)
+            _ = pasteboard.declareTypes(types, owner: nil)
+            for type in types {
+                pasteboard.setData(Data(), forType: type)
+            }
         }
         return "OK"
     }
