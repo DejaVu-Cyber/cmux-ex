@@ -14,6 +14,10 @@ cd "$(dirname "$0")/.."
 DERIVED_DATA_PATH="$HOME/Library/Developer/Xcode/DerivedData/cmux-tests-v1"
 APP="$DERIVED_DATA_PATH/Build/Products/Debug/cmux DEV.app"
 RUN_TAG="tests-v1"
+SOCK="/tmp/cmux-debug-${RUN_TAG}.sock"
+LEGACY_SOCK="/tmp/cmux-${RUN_TAG}.sock"
+CMUXD_SOCK="$HOME/Library/Application Support/cmux/cmuxd-dev-${RUN_TAG}.sock"
+DEBUG_LOG="/tmp/cmux-debug-${RUN_TAG}.log"
 
 should_skip_ghostty_cli_helper_zig_build() {
   if [[ "${CMUX_SKIP_ZIG_BUILD:-}" == "1" ]]; then
@@ -61,7 +65,7 @@ fi
 cleanup() {
   pkill -x "cmux DEV" || true
   pkill -x "cmux" || true
-  rm -f /tmp/cmux*.sock || true
+  rm -f "$SOCK" "$LEGACY_SOCK" "$CMUXD_SOCK" || true
 }
 
 launch_and_wait() {
@@ -77,26 +81,33 @@ launch_and_wait() {
   defaults write com.cmuxterm.app.debug socketControlMode -string full >/dev/null 2>&1 || true
 
   # Launch directly with UI test mode enabled so startup follows deterministic test codepaths.
-  CMUX_TAG="$RUN_TAG" CMUX_UI_TEST_MODE=1 "$APP/Contents/MacOS/cmux DEV" >/dev/null 2>&1 &
+  CMUX_TAG="$RUN_TAG" \
+  CMUX_SOCKET_PATH="$SOCK" \
+  CMUXD_UNIX_PATH="$CMUXD_SOCK" \
+  CMUX_DEBUG_LOG="$DEBUG_LOG" \
+  CMUX_UI_TEST_MODE=1 \
+    "$APP/Contents/MacOS/cmux DEV" >/dev/null 2>&1 &
 
-  SOCK=""
   for _ in {1..120}; do
-    SOCK=$(ls -t /tmp/cmux-debug*.sock /tmp/cmux*.sock 2>/dev/null | head -1 || true)
-    if [ -n "$SOCK" ] && [ -S "$SOCK" ]; then
+    if [ -S "$SOCK" ]; then
       break
     fi
     sleep 0.25
   done
 
-  if [ -z "$SOCK" ] || [ ! -S "$SOCK" ]; then
-    echo "ERROR: Socket not ready (looked for /tmp/cmux*.sock)" >&2
+  if [ ! -S "$SOCK" ]; then
+    echo "ERROR: Socket not ready at $SOCK" >&2
     exit 1
   fi
   export CMUX_SOCKET_PATH="$SOCK"
   export CMUX_SOCKET="$SOCK"
 
   # Ensure LaunchServices has a visible/main window attached for rendering checks.
-  CMUX_TAG="$RUN_TAG" open "$APP" >/dev/null 2>&1 || true
+  CMUX_TAG="$RUN_TAG" \
+  CMUX_SOCKET_PATH="$SOCK" \
+  CMUXD_UNIX_PATH="$CMUXD_SOCK" \
+  CMUX_DEBUG_LOG="$DEBUG_LOG" \
+    open "$APP" >/dev/null 2>&1 || true
   sleep 0.5
 
   echo "== wait ready =="
