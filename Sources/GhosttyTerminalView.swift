@@ -1818,6 +1818,14 @@ class GhosttyApp {
                 prefix: "cmux-shell-integration-override",
                 logLabel: "shell integration override (fallback)"
             )
+            if shouldDisableGhosttyVsyncConfig() {
+                loadInlineGhosttyConfig(
+                    "window-vsync = false",
+                    into: fallbackConfig,
+                    prefix: "cmux-vsync-override",
+                    logLabel: "vsync override (fallback)"
+                )
+            }
             ghostty_config_finalize(fallbackConfig)
             updateDefaultBackground(from: fallbackConfig, source: "initialize.fallbackConfig")
 
@@ -1904,6 +1912,12 @@ class GhosttyApp {
         ProcessInfo.processInfo.environment["CMUX_DISABLE_GHOSTTY_LAYER_BACKGROUND"] == "1"
     }
 
+    private func shouldDisableGhosttyVsyncConfig() -> Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["CMUX_DISABLE_GHOSTTY_VSYNC"] == "1"
+            || env["CMUX_UI_TEST_MODE"] == "1"
+    }
+
     private func loadDefaultConfigFilesWithLegacyFallback(_ config: ghostty_config_t) {
         ghostty_config_load_default_files(config)
         loadLegacyGhosttyConfigIfNeeded(config)
@@ -1959,6 +1973,15 @@ class GhosttyApp {
             prefix: "cmux-shell-integration-override",
             logLabel: "shell integration override"
         )
+
+        if shouldDisableGhosttyVsyncConfig() {
+            loadInlineGhosttyConfig(
+                "window-vsync = false",
+                into: config,
+                prefix: "cmux-vsync-override",
+                logLabel: "vsync override"
+            )
+        }
 
         ghostty_config_finalize(config)
     }
