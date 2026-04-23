@@ -1620,7 +1620,22 @@ class GhosttyApp {
     }
 
     #if DEBUG
-    private static let initLogPath = "/tmp/cmux-ghostty-init.log"
+    fileprivate static func derivedDebugLogPath(suffix: String, fallback: String) -> String {
+        let env = ProcessInfo.processInfo.environment
+        guard let debugLogPath = env["CMUX_DEBUG_LOG"],
+              !debugLogPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return fallback
+        }
+
+        let url = URL(fileURLWithPath: debugLogPath)
+        let ext = url.pathExtension
+        let base = ext.isEmpty ? url : url.deletingPathExtension()
+        return base.path + suffix + (ext.isEmpty ? "" : ".\(ext)")
+    }
+
+    private static var initLogPath: String {
+        derivedDebugLogPath(suffix: "-ghostty-init", fallback: "/tmp/cmux-ghostty-init.log")
+    }
 
     private static func initLog(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -4108,8 +4123,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
 #if DEBUG
-    private static let surfaceLogPath = "/tmp/cmux-ghostty-surface.log"
-    private static let sizeLogPath = "/tmp/cmux-ghostty-size.log"
+    private static var surfaceLogPath: String {
+        GhosttyApp.derivedDebugLogPath(suffix: "-ghostty-surface", fallback: "/tmp/cmux-ghostty-surface.log")
+    }
+
+    private static var sizeLogPath: String {
+        GhosttyApp.derivedDebugLogPath(suffix: "-ghostty-size", fallback: "/tmp/cmux-ghostty-size.log")
+    }
 
     func debugCurrentPixelSize() -> (width: UInt32, height: UInt32) {
         (lastPixelWidth, lastPixelHeight)
