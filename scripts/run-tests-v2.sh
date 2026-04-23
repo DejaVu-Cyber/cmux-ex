@@ -18,6 +18,7 @@ SOCK="/tmp/cmux-debug-${RUN_TAG}.sock"
 LEGACY_SOCK="/tmp/cmux-${RUN_TAG}.sock"
 CMUXD_SOCK="$HOME/Library/Application Support/cmux/cmuxd-dev-${RUN_TAG}.sock"
 DEBUG_LOG="/tmp/cmux-debug-${RUN_TAG}.log"
+APP_STDIO_LOG="/tmp/cmux-debug-${RUN_TAG}-app.log"
 
 should_skip_ghostty_cli_helper_zig_build() {
   if [[ "${CMUX_SKIP_ZIG_BUILD:-}" == "1" ]]; then
@@ -70,6 +71,7 @@ cleanup() {
 
 launch_and_wait() {
   cleanup
+  : >"$APP_STDIO_LOG"
   # Wait briefly for the previous instance to fully terminate; LaunchServices can flake if we
   # relaunch too quickly.
   for _ in {1..50}; do
@@ -86,8 +88,9 @@ launch_and_wait() {
   CMUXD_UNIX_PATH="$CMUXD_SOCK" \
   CMUX_DEBUG_LOG="$DEBUG_LOG" \
   CMUX_DISABLE_GHOSTTY_LAYER_BACKGROUND=1 \
+  GHOSTTY_LOG=stderr \
   CMUX_UI_TEST_MODE=1 \
-    "$APP/Contents/MacOS/cmux DEV" >/dev/null 2>&1 &
+    "$APP/Contents/MacOS/cmux DEV" >>"$APP_STDIO_LOG" 2>&1 &
 
   for _ in {1..120}; do
     if [ -S "$SOCK" ]; then
