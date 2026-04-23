@@ -85,6 +85,7 @@ launch_and_wait() {
   CMUX_SOCKET_PATH="$SOCK" \
   CMUXD_UNIX_PATH="$CMUXD_SOCK" \
   CMUX_DEBUG_LOG="$DEBUG_LOG" \
+  CMUX_DISABLE_GHOSTTY_LAYER_BACKGROUND=1 \
   CMUX_UI_TEST_MODE=1 \
     "$APP/Contents/MacOS/cmux DEV" >/dev/null 2>&1 &
 
@@ -107,6 +108,7 @@ launch_and_wait() {
   CMUX_SOCKET_PATH="$SOCK" \
   CMUXD_UNIX_PATH="$CMUXD_SOCK" \
   CMUX_DEBUG_LOG="$DEBUG_LOG" \
+  CMUX_DISABLE_GHOSTTY_LAYER_BACKGROUND=1 \
     open "$APP" >/dev/null 2>&1 || true
   sleep 0.5
 

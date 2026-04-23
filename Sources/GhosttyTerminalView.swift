@@ -1786,19 +1786,23 @@ class GhosttyApp {
                 return
             }
 
-            loadInlineGhosttyConfig(
-                "macos-background-from-layer = true",
-                into: fallbackConfig,
-                prefix: "cmux-layer-bg",
-                logLabel: "layer background (fallback)"
-            )
+            if shouldDisableHostLayerBackgroundConfig() {
+                usesHostLayerBackground = false
+            } else {
+                loadInlineGhosttyConfig(
+                    "macos-background-from-layer = true",
+                    into: fallbackConfig,
+                    prefix: "cmux-layer-bg",
+                    logLabel: "layer background (fallback)"
+                )
+                usesHostLayerBackground = true
+            }
             loadInlineGhosttyConfig(
                 "shell-integration = none",
                 into: fallbackConfig,
                 prefix: "cmux-shell-integration-override",
                 logLabel: "shell integration override (fallback)"
             )
-            usesHostLayerBackground = true
             ghostty_config_finalize(fallbackConfig)
             updateDefaultBackground(from: fallbackConfig, source: "initialize.fallbackConfig")
 
@@ -1881,24 +1885,31 @@ class GhosttyApp {
         return !String(cString: backgroundImage).isEmpty
     }
 
+    private func shouldDisableHostLayerBackgroundConfig() -> Bool {
+        ProcessInfo.processInfo.environment["CMUX_DISABLE_GHOSTTY_LAYER_BACKGROUND"] == "1"
+    }
+
     private func loadDefaultConfigFilesWithLegacyFallback(_ config: ghostty_config_t) {
         ghostty_config_load_default_files(config)
         loadLegacyGhosttyConfigIfNeeded(config)
         ghostty_config_load_recursive_files(config)
         loadCmuxAppSupportGhosttyConfigIfNeeded(config)
         loadCJKFontFallbackIfNeeded(config)
-        let useHostLayerBackground = !hasConfiguredBackgroundImage(config)
+        let useHostLayerBackground = !shouldDisableHostLayerBackgroundConfig()
+            && !hasConfiguredBackgroundImage(config)
         usesHostLayerBackground = useHostLayerBackground
         if !useHostLayerBackground {
             // Background images need Ghostty's fullscreen background pass. Force
             // the layer-backed solid-color shortcut back off even if the user
             // config enabled it manually.
-            loadInlineGhosttyConfig(
-                "macos-background-from-layer = false",
-                into: config,
-                prefix: "cmux-layer-bg-image-override",
-                logLabel: "layer background image override"
-            )
+            if !shouldDisableHostLayerBackgroundConfig() {
+                loadInlineGhosttyConfig(
+                    "macos-background-from-layer = false",
+                    into: config,
+                    prefix: "cmux-layer-bg-image-override",
+                    logLabel: "layer background image override"
+                )
+            }
         } else {
             // cmux provides the terminal background via backgroundView (CALayer)
             // instead of the GPU full-screen bg pass, so the layer can provide
