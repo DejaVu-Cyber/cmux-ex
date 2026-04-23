@@ -15,18 +15,43 @@ DERIVED_DATA_PATH="$HOME/Library/Developer/Xcode/DerivedData/cmux-tests-v2"
 APP="$DERIVED_DATA_PATH/Build/Products/Debug/cmux DEV.app"
 RUN_TAG="tests-v2"
 
+should_skip_ghostty_cli_helper_zig_build() {
+  if [[ "${CMUX_SKIP_ZIG_BUILD:-}" == "1" ]]; then
+    return 0
+  fi
+
+  local product_version zig_version major_version
+  product_version="$(sw_vers -productVersion 2>/dev/null || true)"
+  zig_version="$(zig version 2>/dev/null || true)"
+  major_version="${product_version%%.*}"
+
+  if [[ "$zig_version" == "0.15.2" ]] && [[ "$major_version" =~ ^[0-9]+$ ]] && (( major_version >= 26 )); then
+    return 0
+  fi
+
+  return 1
+}
+
 echo "== build =="
 # Work around stale explicit-module cache artifacts (notably Sentry headers) that can
 # intermittently break incremental VM builds with "file ... has been modified since the
 # module file ... was built".
 rm -rf "$DERIVED_DATA_PATH/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules" || true
-xcodebuild \
+
+XCODEBUILD_ARGS=(
   -project GhosttyTabs.xcodeproj \
   -scheme cmux \
   -configuration Debug \
   -destination "platform=macOS" \
   -derivedDataPath "$DERIVED_DATA_PATH" \
-  build >/dev/null
+)
+
+if should_skip_ghostty_cli_helper_zig_build; then
+  echo "== build note: auto-enabling CMUX_SKIP_ZIG_BUILD=1 for Ghostty CLI helper =="
+  XCODEBUILD_ARGS+=(CMUX_SKIP_ZIG_BUILD=1)
+fi
+
+xcodebuild "${XCODEBUILD_ARGS[@]}" build >/dev/null
 
 if [ ! -d "$APP" ]; then
   echo "ERROR: cmux DEV.app not found at expected path: $APP" >&2
