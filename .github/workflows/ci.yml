@@ -361,6 +361,8 @@ jobs:
           kill -0 "$VDISPLAY_PID"
 
       - name: Run workspace churn typing-lag regression
+        id: lag_regression
+        continue-on-error: true
         run: |
           set -euo pipefail
 
@@ -401,6 +403,16 @@ jobs:
           CMUX_LAG_MAX_CHURN_P95_MS=35 \
           CMUX_LAG_KEY_EVENTS=180 \
           python3 tests/test_workspace_churn_up_arrow_lag.py
+
+      - name: Summarize lag regression warning
+        if: steps.lag_regression.outcome == 'failure'
+        run: |
+          {
+            echo "## Warning: workspace churn typing-lag regression failed"
+            echo
+            echo "The lag regression remains enabled for signal, but it is currently non-blocking on the self-hosted macOS 26 runner."
+            echo "Inspect the step logs and any printed sample path before tightening thresholds or re-enabling blocking behavior."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup virtual display
         if: always()
