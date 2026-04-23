@@ -115,6 +115,75 @@ Follow `AGENTS.md` exactly. The important repo-specific rules are:
 - If adding a cmux-owned keyboard shortcut, also update shortcut settings, config support, and docs.
 - If modifying a submodule, push the submodule commit to its remote before committing the updated pointer in the parent repo.
 
+Validation is tiered. Do not treat every validation path as a hard completion gate on every ticket.
+
+- Required local validation:
+  - For most app changes, always run `./scripts/reload.sh --tag <tag>`.
+  - Add a narrow local `xcodebuild -scheme cmux-unit` check only when unit coverage is directly relevant to the changed behavior.
+- Required CI validation:
+  - Trigger GitHub Actions only when the ticket actually changes behavior that those workflows validate.
+  - Prefer the smallest targeted workflow or test filter that covers the change.
+- External or environment-specific validation:
+  - Treat VM-only checks, unavailable runners, queued workflows, missing SSH targets, or missing external access as explicit blockers, not as a reason to keep retrying indefinitely.
+  - If a required validation path is unavailable after a reasonable attempt, record the exact blocker in the workpad and completion summary, then stop.
+- Performance or noisy environment-sensitive regressions:
+  - Treat these as warning-level signal unless the repo explicitly says they are blocking.
+  - Do not keep re-running them indefinitely trying to force a pass on unstable infrastructure.
+
+## GitHub PR diagnostics
+
+Any action that creates, updates, syncs, reopens, retitles, edits, or comments on a GitHub PR must log
+the effective GitHub CLI identity immediately before the write.
+
+Treat all of the following as PR actions that require diagnostics first:
+
+- opening a new PR
+- pushing new commits to a branch that already has an open PR
+- editing PR title/body/base/draft state
+- posting a PR comment or review comment
+- replying to PR review feedback
+
+Run this exact diagnostic block immediately before each such action:
+
+```bash
+printf '%s\n' '=== GitHub PR diagnostics ==='
+printf 'pwd=%s\n' "$PWD"
+printf 'branch=%s\n' "$(git branch --show-current)"
+printf '%s\n' 'remote:'
+git remote -v
+printf '%s\n' 'gh-path:'
+which gh
+printf '%s\n' 'gh-auth-status:'
+gh auth status || true
+printf '%s\n' 'gh-api-user:'
+gh api user
+printf '%s\n' 'github-env:'
+for var in GH_TOKEN GITHUB_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN; do
+  value="${!var:-}"
+  if [ -z "$value" ]; then
+    printf '%s=<unset>\n' "$var"
+  else
+    len=${#value}
+    if [ "$len" -gt 8 ]; then
+      printf '%s=%s...%s\n' "$var" "${value:0:4}" "${value:len-4:4}"
+    else
+      printf '%s=%s\n' "$var" "$value"
+    fi
+  fi
+done
+printf '%s\n' 'git-identity:'
+printf 'author=%s <%s>\n' "${GIT_AUTHOR_NAME:-}" "${GIT_AUTHOR_EMAIL:-}"
+printf 'committer=%s <%s>\n' "${GIT_COMMITTER_NAME:-}" "${GIT_COMMITTER_EMAIL:-}"
+```
+
+Rules:
+
+- Use explicit shell commands for PR writes. Do not describe PR publication abstractly.
+- For new PRs, use `gh pr create ...`.
+- For existing PR metadata changes, use `gh pr edit ...`.
+- For PR comments, use `gh pr comment ...` or `gh api ...` explicitly.
+- If `gh api user` does not return the expected service account login, record the mismatch in the workpad and stop instead of publishing.
+
 ## Execution flow
 
 1. If the issue is `Todo`, move it to `In Progress` before coding.
@@ -126,13 +195,20 @@ Follow `AGENTS.md` exactly. The important repo-specific rules are:
 5. Implement the change end-to-end.
 6. Validate with the smallest correct verification set:
    - For most app changes: `./scripts/reload.sh --tag <tag>`.
-   - For UI/E2E coverage: trigger the appropriate GitHub Actions workflow with `gh workflow run ...`.
+   - For narrow unit coverage: run a targeted `xcodebuild -scheme cmux-unit` check only when directly relevant.
+   - For UI/E2E coverage: trigger the appropriate GitHub Actions workflow with `gh workflow run ...` only when the changed behavior needs it.
+   - For VM/socket suites: run them only when the ticket actually touches the behavior those suites cover and the required SSH target/access exists.
    - For review feedback or bugfix follow-ups: rerun the relevant targeted validation only.
+   - If a required CI or VM validation path is unavailable, record it as a blocker and stop once code, PR, and blocker documentation are complete.
 7. Commit, push, and open or update a PR.
    - The PR title must include `{{ issue.identifier }}` so Linear can link it correctly.
+   - Run the GitHub PR diagnostics block immediately before the push if the branch already has an open PR.
+   - Run the GitHub PR diagnostics block immediately before `gh pr create`, `gh pr edit`, `gh pr comment`, or any other PR write.
+   - Use explicit shell commands for PR publication and PR updates.
 8. Read PR comments and reviews again after pushing. Address all actionable feedback before handoff.
 9. Post a completion summary to the Linear issue.
-10. Move the issue to `In Review` only after code, validation, and PR publication are complete.
+10. Move the issue to `In Review` only after code, required available validation, and PR publication are complete.
+    - If the only remaining gaps are blocked external validations, keep the issue in `In Progress`, post the blocker clearly, and stop.
 
 ## GitHub and Linear requirements
 
@@ -172,7 +248,9 @@ Use this exact structure for the single persistent Linear workpad comment:
 
 ### Validation
 
-- [ ] build: `./scripts/reload.sh --tag <tag>`
+- [ ] required local: `./scripts/reload.sh --tag <tag>`
+- [ ] required CI: <workflow or `not needed`>
+- [ ] external/blocking: <vm/runner dependency or `none`>
 
 ### Notes
 
